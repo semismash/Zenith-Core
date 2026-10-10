@@ -27,7 +27,7 @@
     # s10 - BIOS Status Register
         # [7:0]: BIOS Status Byte
         # [8]: BIOS Connection Valid
-        # [9]: BIOS Status Flush
+        # [9]: BIOS Status Flush (State logging)
 
 # MEMORY LAYOUT:
 # 0x00000000 - 0x00000FFF: BIOS ROM
@@ -165,9 +165,39 @@ connect:
     li      a1, ERR_CONNECTION_INVALID
     j       error_handler
 
-device_data: 
+device_data:
+    li      a6, BIOSST_DD
+    call    push_addr
+    call    update_state    # update state
+
+    j       idle
 
 bios_log:
+    li      a6, BIOSST_LOG_ST
+    call    push_addr
+    call    update_state    # update state
+
+    call    uart_rx         # get byte indicating on (0x01) or off (0x00) for tracking
+    beqz    a0, 1f          # jump to switch off logic
+    addi    a0, a0, -1      # subtract 1 to check if equal to zero
+    beqz    a0, 2f          # jump to switch on logic
+    li      a0, ERR_BIOS
+    li      a1, ERR_BIOS_LOG_INV_OPT    # invalid option (didnt select from 0x00 or 0x01)
+    j       error_handler
+1:
+    andi    s10, 0xFFFFFDFF # mask to reset 9th bit (bios state update)
+    li      a0, BIOSST_LOG          # acknowledgement sent to master device
+    call    uart_rx
+    li      a0, BIOSST_LOG_OFF
+    call    uart_rx
+    j       idle
+2:
+    ori     s10, 0x00000200 # mask to set 9th bit (bios state update)
+    li      a0, BIOSST_LOG          # acknowledgement sent to master device
+    call    uart_rx
+    li      a0, BIOSST_LOG_ON
+    call    uart_rx
+    j       idle
 
 # HELPERS
 

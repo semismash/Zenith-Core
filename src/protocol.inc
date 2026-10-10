@@ -61,6 +61,9 @@
     .equ DD_PARAM_CLKSPD    0x04
     .equ DD_PARAM_BAUDTK    0x05
 # BIOS STATE MONITORING
+.equ FB_BIOSST_LOG  0xFA
+    .equ BIOSST_LOG_ON  0x00
+    .equ BIOSST_LOG_OFF 0x01
 .equ FB_BIOSST_UPDT 0xF0
     .equ BIOSST_IDLE    0x00
     .equ BIOSST_MSG     0x03
@@ -72,6 +75,7 @@
     .equ BIOSST_PGEX    0x1C
     .equ BIOSST_DD      0x0D
     .equ BIOSST_ERR     0x0E
+    .equ BIOSST_LOG_ST  0x0F
 
 # BIOS ERRORS (INTERNAL AND EXTERNAL)
 .equ ERR_MESSAGE        0xE3
@@ -89,3 +93,4 @@
 .equ ERR_CRITICAL       0xEE   
 .equ ERR_BIOS           0xEF
     .equ ERR_BIOS_TIMEOUT       0x01
+    .equ ERR_BIOS_LOG_INV_OPT   0x02
