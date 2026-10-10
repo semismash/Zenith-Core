@@ -1,6 +1,7 @@
 # TO BIOS
 # MESSAGES
 .equ TB_MSG_ECHO    0x3A
+.equ TB_MSG_STR     0x3D
 .equ TB_MSG_FINISH  0x3F
 # SELF TEST
 .equ TB_ST_INIT     0x5A
@@ -28,7 +29,8 @@
 .equ TB_BIOS_DATA   0xFA
 
 # FROM BIOS
-.equ FB_MSG_DISP    0x3D
+.equ FB_MSG_DISP    0x3A
+.equ FB_MSG_STR     0x3D
 .equ FB_MSG_FLSH    0x3F
 # SELF TEST
 .equ FB_ST_PASS     0x5C

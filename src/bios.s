@@ -134,8 +134,14 @@ msg_echo:
     li      a1, program_top # store string starting from program top
     call    push_addr       # push address to stack again
     call    gets            # get input string of byte size
+
+    li      a0, FB_MSG_DISP # send transmission byte starting message display attempt
+    call    uart_tx  
     call    push_addr       # push address to stack again
     call    puts            # print string via uart using puts
+
+    li      a0, FB_MSG_FLSHS
+    call    uart_tx         # transmit flush message towards the end
     
     j       idle            // slash slash comment cuz funny
 
@@ -268,6 +274,10 @@ get_size:   # little endian 4 byte size
     ret
 
 gets:
+    call    uart_rx
+    li      t0, TB_MSG_STR  # verify it is a string first
+    bne     a0, t0, 3f      # jump to error handler if bytes not equal
+
     mv      s4, a0          # string size 
     mv      s5, a1          # go to offset stored in a1
     call    push_addr
@@ -301,17 +311,19 @@ puts:
     mv      s5, a1          # go to offset stored in a1
     call    push_addr
     call    check_msg_size
-    beqz    a0, 2f          # if message size is too high, raise error
+    beqz    a0, 2f          # if message size is too high (as returned by check_msg_size), raise error
     mv      t1, s4          # move size into t1
     mv      t0, s5          # move pointer into t0
+
+    li      a0, FB_MSG_STR  # only start trasmitting the string after verifying tramissibility
+    call    uart_tx         # start with transmitting 0x3D prefix string byte
 1:
     lb      a0, 0(t0)       # load byte from pointer to register
     call    uart_tx         # send via tx
     addi    t0, t0, 1       # increment pointer
     addi    t1, t1, -1      # decrement counter
     bnez    t1, 1b          # loop as long as counter is not zero
-    li      a0, FB_MSG_FLSH
-    call    uart_tx         # transmit flush message for verification towards the end
+
     call    pop_addr
     ret
 2:
