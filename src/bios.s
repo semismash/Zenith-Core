@@ -8,6 +8,9 @@
 .equ PROGRAM_TOP,       0x20000                     # program top address, everything above that is reserved by BIOS
 .equ RAM_TOP,           PROGRAM_START + RAM_SIZE    # PROGRAM_START + RAM_SIZE, top of stack grows down from here, (0x21000)
 
+.equ ROM_START,         0x0
+.equ ROM_SIZE,          0x1000
+
 .equ BIOS_STACK_SIZE    64                          # 64 bytes allocated for BIOS
 
 .include "protocol.inc"
@@ -41,6 +44,8 @@
 .align 2
 
 # BIOS Messages
+bios_start_msg_len: # length of below string + 0x00 for null term
+    .word   26
 bios_start_msg:
     .string "BIOS Loaded Successfully!"
 
@@ -53,6 +58,8 @@ ram_top:            # 0x21000
     .word   RAM_TOP
 program_top:        # 0x20000
     .word   PROGRAM_TOP
+program_size:
+    .word   PROGRAM_TOP - PROGRAM_START
 bios_stack_top:     # 0x21000
     .word   RAM_TOP
 program_stack_top:  # 0x20000
@@ -63,8 +70,12 @@ bios_mem_size:
     .word   RAM_TOP - BIOS_STACK_SIZE - PROGRAM_TOP
 
 # Device Data
+dd_name_len:
+    .word   23
 dd_name:    # device bios name
     .string "Zenith Core BIOS v.1.0"
+dd_arch_len:
+    .word   24
 dd_arch:    # device arch
     .string "RISC-V | RV32I | 32-bit"
 dd_regc:    # GPR count
@@ -130,17 +141,15 @@ msg_echo:
     call    update_state    # update state
     
     call    push_addr       # push address to stack
-    call    get_size        # fetch size of message
-    li      a1, program_top # store string starting from program top
-    call    push_addr       # push address to stack again
-    call    gets            # get input string of byte size
+    call    gets            # get input string of byte size a long with size
 
-    li      a0, FB_MSG_DISP # send transmission byte starting message display attempt
+    li      a0, FB_MSG_ECHO # send transmission byte starting message display attempt
     call    uart_tx  
+
     call    push_addr       # push address to stack again
     call    puts            # print string via uart using puts
 
-    li      a0, FB_MSG_FLSHS
+    li      a0, FB_MSG_FLSH
     call    uart_tx         # transmit flush message towards the end
     
     j       idle            // slash slash comment cuz funny
@@ -172,9 +181,81 @@ connect:
     j       error_handler
 
 device_data:
+
     li      a6, BIOSST_DD
     call    push_addr
     call    update_state    # update state
+
+    li      a0, FB_DD_DISP  # device data display, send init byte
+    call    uart_rx
+    
+    li      a0, DD_PARAM_BIOS       # BIOS info
+    call    uart_rx
+    li      a0, dd_name_len         # load string size
+    la      a1, dd_name             # load offset pointer
+    call    push_addr
+    call    gets
+
+    li      a0, DD_PARAM_ARCH       # architecture info
+    call    uart_rx
+    li      a0, dd_arch_len         # load string size
+    la      a1, dd_arch             # load offset pointer
+    call    push_addr
+    call    gets
+
+    li      a0, DD_PARAM_REGCNT     # register count
+    call    uart_rx
+    li      a0, dd_regc
+    call    push_addr
+    call    send_word               # send as int word (yes ik regc is tiny number but it deals with words for quantities for consistency)
+
+    li      a0, DD_PARAM_CLKSPD     # condigured clock speed
+    call    uart_rx
+    li      a0, dd_clk
+    call    push_addr
+    call    send_word               # send as word
+
+    li      a0, DD_PARAM_BAUDTK     # configured baud tick
+    call    uart_rx
+    li      a0, dd_baud
+    call    push_addr
+    call    send_word               # send as word
+    
+    li      a0, DD_PARAM_RAMOFS     # ram offset
+    call    uart_rx
+    li      a0, program_start
+    call    push_addr
+    call    send_word               # send as word
+
+    li      a0, DD_PARAM_RAMSZ      # ram size
+    call    uart_rx
+    li      a0, ram_size
+    call    push_addr
+    call    send_word               # send as word
+
+    li      a0, DD_PARAM_PROGOFS    # program offset (same as ram offset)
+    call    uart_rx
+    li      a0, program_start
+    call    push_addr
+    call    send_word               # send as word
+
+    li      a0, DD_PARAM_PROGSZ     # program size
+    call    uart_rx
+    li      a0, program_size
+    call    push_addr
+    call    send_word               # send as word
+
+    li      a0, DD_PARAM_ROMOFS     # rom offset
+    call    uart_rx
+    li      a0, ROM_START
+    call    push_addr
+    call    send_word               # send as word
+
+    li      a0, DD_PARAM_ROMSZ     # rom size
+    call    uart_rx
+    li      a0, ROM_SIZE
+    call    push_addr
+    call    send_word               # send as word
 
     j       idle
 
@@ -219,7 +300,7 @@ pop_addr:
     addi    sp, sp, 4       # increment stack to decrease size
     jr      t0              # jump to the previous ra value (return from original function call)
 
-uart_rx:    # UART polling loops (no interrupts yet :/)
+uart_rx:    # UART polling loops (no interrupts yet :/), only sends lower byte, doesnt modify a0 at all
     li      t1, DEFAULT_TIMEOUT_CYCLE
     beqz    a4, 1f          # a4 is custom timeout parameter, if its already zeroed out, then use default (jump to 1 directly)
     li      t1, a4          # load custom timeout if doesn't skip
@@ -242,6 +323,18 @@ uart_tx:    # NOTE: no need for safety checker here, as its BIOS side, cannot ti
     ret
 
 # BIOS Functions
+
+send_word:  # sent in little endian order, return the original word too
+    li      t0, 4           # 4 bytes per word
+    mv      t1, a0          # temporarily store original word
+1:  
+    call    uart_rx         # send lower byte
+    srli    a0, a0, 8       # shift right one byte
+    addi    t0, t0, -1      # subtract once from loop variable
+    bnez    t0, 1b          # go back if not yet zero (loop 4 times)
+    mv      a0, t1          # move word back to a0 to return for reuse
+    call    pop_addr
+    ret
 
 update_state:
     andi    a6, a6, 0xFF    # mask out lower byte of status update, in case
@@ -278,13 +371,14 @@ gets:
     li      t0, TB_MSG_STR  # verify it is a string first
     bne     a0, t0, 3f      # jump to error handler if bytes not equal
 
-    mv      s4, a0          # string size 
-    mv      s5, a1          # go to offset stored in a1
+    call    push_addr
+    call    get_size
+    mv      s4, a0          # string size, move into s4 temporarily to survive check_msg_size
     call    push_addr
     call    check_msg_size
     beqz    a0, 2f          # if message size too high, respective error  
     mv      t1, s4          # move size into t1
-    mv      t0, s5          # move pointer into t0
+    mv      t0, a1          # move pointer into t0, a1 returns the offset pointer to be used by a potential puts later
 1:
     call    uart_rx
     sb      a0, 0(t0)       # store to pointer
@@ -292,9 +386,7 @@ gets:
     addi    t1, t1, -1      # decrement counter
     bnez    t1, 1b          # loop as long as counter is not zero
 
-    call    uart_rx
-    li      t0, TB_MSG_FINISH
-    bne     a0, t0, 3f      # check if final byte is flush to verify transmission, if not, then jump
+    mv      a0, s4          # return size (saved in s4 earlier)
     call    pop_addr
     ret
 2:
@@ -308,12 +400,11 @@ gets:
 
 puts:
     mv      s4, a0          # string size 
-    mv      s5, a1          # go to offset stored in a1
     call    push_addr
     call    check_msg_size
     beqz    a0, 2f          # if message size is too high (as returned by check_msg_size), raise error
     mv      t1, s4          # move size into t1
-    mv      t0, s5          # move pointer into t0
+    mv      t0, a1          # move pointer into t0
 
     li      a0, FB_MSG_STR  # only start trasmitting the string after verifying tramissibility
     call    uart_tx         # start with transmitting 0x3D prefix string byte
