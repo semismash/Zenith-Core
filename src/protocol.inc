@@ -12,8 +12,6 @@
 .equ TB_META_PGRST,  0x73
 # MEMORY
 .equ TB_MEM_DUMP,    0x8A
-.equ TB_MEM_OFSADR,  0x80
-.equ TB_MEM_DUMPSZ,  0x81
 # CONNECTION
 .equ TB_NET_SYN,     0xAA
 .equ TB_NET_ACK,     0xAC
@@ -91,6 +89,7 @@
 .equ ERR_SELF_TEST,      0xE5
 .equ ERR_TELEMETRY,      0xE7
 .equ ERR_MEMORY,         0xE8
+    .equ ERR_MEM_OUT_OF_BOUNDS   0x01
 .equ ERR_CONNNECT,       0xEA
     .equ ERR_CONNECTION_INVALID, 0x01
     .equ ERR_CONNECTION_TIMEOUT, 0x02

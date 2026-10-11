@@ -31,6 +31,7 @@
         # [7:0]: BIOS Status Byte
         # [8]: BIOS Connection Valid
         # [9]: BIOS Status Flush (State logging)
+    # s11 - Program Start Offset
 
 # MEMORY LAYOUT:
 # 0x00000000 - 0x00000FFF: BIOS ROM
@@ -158,7 +159,22 @@ self_test:
 
 telemetry:
 
-memory:
+memdump:
+    call    push_addr       
+    call    get_word        # get size word
+    mv      a0, t0          
+
+    call    push_addr
+    call    get_word        # get offset word
+    mv      a0, t1
+
+    mv      t0, a0          # move to respective argument positions
+    mv      t1, a1          # for the mem display function
+
+    call    push_addr
+    call    mem_print       # call mem diplay function (a0 = size, a1 = offset)
+
+    j       idle
 
 connect:
     li      a6, BIOSST_NET
@@ -336,6 +352,21 @@ send_word:  # sent in little endian order, return the original word too
     call    pop_addr
     ret
 
+get_word:   # little endian 4 byte word
+    addi    t0, x0, 4       # loop 4 times for 4 bytes
+    addi    t1, x0, 0       # initialize shift counter to 0 bits
+1:  
+    call    uart_rx
+    sll     t2, a0, t1      # shift new byte left by current shift counter (0 -> 8 -> 16 -> 24)
+    or      t3, t3, t2      # merge the shifted byte into final reg
+    addi    t1, t1, 8       # increment shift counter by 8 bits for the next byte
+    addi    t0, t0, -1      # decrement shift loop counter
+    bnez    t0, 1b          # go back if not yet 0
+
+    mv      a0, t3          # move from temp register to return register
+    call    pop_addr        # pop stack saved address
+    ret
+
 update_state:
     andi    a6, a6, 0xFF    # mask out lower byte of status update, in case
     andi    s10, s10, 0xFF  # clear lower bytes of status register
@@ -351,20 +382,25 @@ update_state:
     call    pop_addr
     ret
 
-get_size:   # little endian 4 byte size
-    addi    t0, x0, 4       # loop 4 times for 4 bytes
-    addi    t1, x0, 0       # initialize shift counter to 0 bits
+mem_print:
+    mv      t0, a0          # size
+    mv      t1, a1          # offset
+    call    push_addr
+    call    check_size
+    beqz    a0, 2f          # if size overflow
 1:  
-    call    uart_rx
-    sll     t2, a0, t1      # shift new byte left by current shift counter (0 -> 8 -> 16 -> 24)
-    or      t3, t3, t2      # merge the shifted byte into final reg
-    addi    t1, t1, 8       # increment shift counter by 8 bits for the next byte
-    addi    t0, t0, -1      # decrement shift loop counter
-    bnez    t0, 1b          # go back if not yet 0
+    lbu     a0, 0(t1)       # load byte from memory
+    call    uart_tx         # send via uart tx
+    addi    t0, t0, -1      # subtract 1 from size to reduce count
+    addi    t1, t1, 1       # incremement offset pointer
+    bnez    t0, 1b
 
-    mv      a0, t3          # move from temp register to return register
-    call    pop_addr        # pop stack saved address
+    call    pop_addr    
     ret
+2:
+    li      a0, ERR_MEMORY
+    li      a1, ERR_MEM_OUT_OF_BOUNDS
+    j       error_handler
 
 gets:
     call    uart_rx
@@ -372,10 +408,10 @@ gets:
     bne     a0, t0, 3f      # jump to error handler if bytes not equal
 
     call    push_addr
-    call    get_size
-    mv      s4, a0          # string size, move into s4 temporarily to survive check_msg_size
+    call    get_word
+    mv      s4, a0          # string size, move into s4 temporarily to survive check_size
     call    push_addr
-    call    check_msg_size
+    call    check_size
     beqz    a0, 2f          # if message size too high, respective error  
     mv      t1, s4          # move size into t1
     mv      t0, a1          # move pointer into t0, a1 returns the offset pointer to be used by a potential puts later
@@ -401,8 +437,8 @@ gets:
 puts:
     mv      s4, a0          # string size 
     call    push_addr
-    call    check_msg_size
-    beqz    a0, 2f          # if message size is too high (as returned by check_msg_size), raise error
+    call    check_size
+    beqz    a0, 2f          # if message size is too high (as returned by check_size), raise error
     mv      t1, s4          # move size into t1
     mv      t0, a1          # move pointer into t0
 
@@ -422,7 +458,7 @@ puts:
     li      a1, ERR_OUT_MSG_TOO_BIG
     j       error_handler
 
-check_msg_size:
+check_size:
     li      t0, bios_data_top           # top address for BIOS data (end of stack)
     sub     t1, t0, a1                  # subtract offset pointer address from top address to get remaining size
     bltz    t1, 1f                      # ensure that pointer is not greater than max allowed address
