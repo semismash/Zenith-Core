@@ -25,6 +25,7 @@
     .equ PRG_T_MODE,    0xC3
     .equ PRG_T_RST,     0xC4
     .equ PRG_REGDISP,   0xC5
+.equ TB_PRG_VERIFY,  0xCB   # different from the verify argument, this is for the actual command itself
 .equ TB_PRG_CC,      0xCC
 # DEVICE DATA
 .equ TB_DD_DATA,     0xDA
@@ -54,8 +55,9 @@
 # CONNECTION
 .equ FB_NET_SYNACK,  0xAB
 # PROGRAM RUNTIME
-.equ FB_PRG_ATTMPT,  0xCA
-.equ FB_PRG_SCCESS,  0xCC
+.equ FB_PRG_LOAD,    0xCA
+.equ FB_PRG_VERIFY,  0xCB
+.equ FB_PRG_RUN,     0xCC
 # DEVICE DATA
 .equ FB_DD_DISP,     0xDA
 .equ FB_DD_PARAM,    0xD1
@@ -89,25 +91,26 @@
 
 # BIOS ERRORS (INTERNAL AND EXTERNAL)
 .equ ERR_MESSAGE,        0xE3
-    .equ ERR_GET_MSG_TOO_BIG,    0x01
-    .equ ERR_PUT_MSG_TOO_BIG,    0x02
-    .equ ERR_GET_MSG_UNVERIFIED, 0x03
+    .equ ERR_GET_MSG_TOO_BIG,       0x01
+    .equ ERR_PUT_MSG_TOO_BIG,       0x02
+    .equ ERR_GET_MSG_UNVERIFIED,    0x03
 .equ ERR_SELF_TEST,      0xE5
 .equ ERR_TELEMETRY,      0xE7
-    .equ ERR_META_UNVERIFIED,    0x01
-    .equ ERR_META_PARAM_INVALID, 0x02
-    .equ ERR_META_ARG_INVALID,   0x03
+    .equ ERR_META_UNVERIFIED,       0x01
+    .equ ERR_META_PARAM_INVALID,    0x02
+    .equ ERR_META_ARG_INVALID,      0x03
 .equ ERR_MEMORY,         0xE8
-    .equ ERR_MEM_OUT_OF_BOUNDS   0x01
+    .equ ERR_MEM_OUT_OF_BOUNDS      0x01
 .equ ERR_CONNNECT,       0xEA
-    .equ ERR_CONNECTION_INVALID, 0x01
-    .equ ERR_CONNECTION_TIMEOUT, 0x02
+    .equ ERR_CONNECTION_INVALID,    0x01
+    .equ ERR_CONNECTION_TIMEOUT,    0x02
 .equ ERR_PROGRAM,        0xEC
-    .equ ERR_PRG_UNVERIFIED,     0x01
-    .equ ERR_PRG_PARAM_INVALID,  0x02
-    .equ ERR_PRG_ARG_INVALID,    0x03
+    .equ ERR_PRG_UNVERIFIED,        0x01
+    .equ ERR_PRG_PARAM_INVALID,     0x02
+    .equ ERR_PRG_ARG_INVALID,       0x03
+    .equ ERR_PRG_TOO_BIG,           0x04
 .equ ERR_DEVICE_DATA,    0xED
 .equ ERR_CRITICAL,       0xEE   
 .equ ERR_BIOS,           0xEF
-    .equ ERR_BIOS_TIMEOUT,       0x01
-    .equ ERR_BIOS_ARG_INVALID,   0x02
+    .equ ERR_BIOS_TIMEOUT,          0x01
+    .equ ERR_BIOS_ARG_INVALID,      0x02

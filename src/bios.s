@@ -34,6 +34,7 @@
     # s1 - UART status
     # s2 - UART RX DATA
     # s3 - UART TX DATA
+    # s9 - Loaded Program Size
     # s10 - BIOS Status Register
         # [7:0]: BIOS Status Byte
         # [8]: BIOS Connection Valid
@@ -95,6 +96,12 @@ dd_clk:     # configured clock speed
     .word   10000000    # MHz
 dd_baud:    # configured UART baud tick rate
     .word   9600        # MHz
+
+# Program completion
+jump_back:
+    .word   0x67000000  # little endian words instruction for jalr x0, 0(x0)
+jump_back_reg_disp:
+    .word   0x67000000  # little endian words instruction for jalr x0, 0(x0) [SUBJECT TO CHANGE]
 
 # Other
 connection_timeout:
@@ -314,10 +321,12 @@ connect:
     j       error_handler
 
 program_load:   # here, the s4 register is used like a temporary status register for this function or some shit idk
+    # s4 status register = [4 (reg disp), 3 (telereset), 2 (telemode), 1 (verify), 0 (run)]
     li      a6, program_load
     call    push_addr
     call    update_state        # update state    
 
+    li      s11, PROGRAM_START  # default program start offset into s11 program offset register
     li      t4, 6               # 6 possible arguments (run, verify, offset, telemetry mode, telemetry reset, register display)
 1:  
     li      t0, TB_PRG_LOAD     # if arguments loaded... or not (recheck using the same verification byte again)
@@ -347,8 +356,8 @@ program_load:   # here, the s4 register is used like a temporary status register
     j       15f
 5:
     mv      s5, t4              # technically not required as get_word never uses t4, probably will remove it later on
-    call    get_word            # but still safety to move out from temp reg before calling func
-    call    push_addr
+    call    push_addr           # but still safety to move out from temp reg before calling func
+    call    get_word            
     mv      t4, s5
     mv      s11, a0             # move program load offset into offset register (s11 is the program offset register, programs are loaded and run here)
     j       15f
@@ -379,9 +388,72 @@ program_load:   # here, the s4 register is used like a temporary status register
 15:
     addi    t4, t4, -1          # decrement count
     j       1f                  # go back in tloop
+
 2:
     call    push_addr           # program get size
-    call    get_size
+    call    get_word
+    
+    mv      a1, s11             # move offset into a1 as arg
+    mv      s9, a0              # move into s9 program size register first
+    mv      t0, a0              # move to t0 as check_size consumes a0
+    addi    a0, a0, 4           # add 4 (1 word) to a0 for size measurement, need one extra word at the end for a jump instruction back to bios after program execution
+    call    push_addr           # check program size
+    call    check_size
+    beq     a0, 17f             # size is too big, fail to load program
+
+    mv      t1, s11             # move offset pointer to t11 for use
+    mv      t2, t0              # load program size again (for later use for mem dumps and shi), as t0 gets consumed right after this
+16:
+    call    uart_loop
+    sb      a0, 0(t1)           # store byte in memory
+    addi    t1, t1, 1           # increment pointer (pointer goes upwards, wheeee!)
+    addi    t0, t0, -1          # decerment byte count
+    bnez    t0, 16b             # go back if not yet zero
+
+    # now, da fun begins >:D (use our s4 status register to apply its settings here)
+    mv      t0, t2              # move size bacak into t0
+    srli    t2, s4, 4           # reg display bit
+    beqz    t2, 18f
+    li      t2, jump_back_reg_disp
+    j       19f                 # if reg disp turned on, jump back to different address after executing (its in BIOS, for displaying reg values specifically)
+18:
+    li      t2, jump_back       # if reg disp is turned off, then just go back to start of bios as normal
+19:
+    sb      t2, 0(t1)           # finish loading program finally
+
+    srli    t2, s4, 2           # program telemetry enable bit
+    andi    t2, t2, 0x01        # mask out bit
+    beqz    t2, 20f
+    ori     s10, s10, 0x00000400        # set 10th bit of bios status register (program telemetry enable)
+    j       21f
+20:
+    andi    s10, s10, 0xFFFFFBFF        # reset 10th bit of bios status register (program telemetry enable)
+21:
+    
+    srli    t2, s4, 3           # program telemetry reset bit
+    andi    t2, t2, 0x01        # mask out bit
+    beqz    t2, 22f
+    ori     s10, s10, 0x00000800        # set 11th bit of bios status register (program telemetry reset)
+    j       23f
+22:
+    andi    s10, s10, 0xFFFFF7FF        # reset 11th bit of bios status register (program telemetry reset)
+23:
+
+    srli    t2, s4, 1           # program verify bit
+    andi    t2, t2, 0x01        # mask out bit
+    beqz    t2, 24f             # if not set, skip verification
+    li      a0, FB_PRG_VERIFY   # send uart tx flag bit for verification (read back)
+    call    uart_tx
+    mv      a0, s9              # move size back from s9 into a0 as argument for next func
+    mv      a1, s11             # move offset from s11 back into a1
+    call    push_addr
+    call    mem_print
+24:
+    andi    t2, s4, 0x01        # program run bit (mask out)
+    bnez    t2, program_run     # if not set, then skip, otherwise jump to run
+
+    j       update              # go back to update state
+
 9:
     li      a0, ERR_PROGRAM
     li      a0, ERR_PRG_PARAM_INVALID
@@ -393,6 +465,10 @@ program_load:   # here, the s4 register is used like a temporary status register
 11:
     li      a0, ERR_PROGRAM
     li      a0, ERR_PRG_PARAM_INVALID
+    j       error_handler
+17:
+    li      a0, ERR_PROGRAM
+    li      a0, ERR_PRG_TOO_BIG
     j       error_handler
 
 device_data:
@@ -500,6 +576,9 @@ bios_log:
     li      a0, BIOSST_LOG_ON
     call    uart_rx
     j       idle
+
+program_run:
+
 
 # HELPERS
 
@@ -666,7 +745,6 @@ check_size:
     ret
 1:
     j       critical_error              # critical error raised if offset is higher than allocated memory top
-
 
 # HANDLERS
 timeout_handler:    # uses a5 for checking handler type
