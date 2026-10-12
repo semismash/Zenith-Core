@@ -471,6 +471,18 @@ program_load:   # here, the s4 register is used like a temporary status register
     li      a0, ERR_PRG_TOO_BIG
     j       error_handler
 
+program_verify:
+    li      a6, BIOSST_MEM
+    call    push_addr
+    call    update_state    # update state
+
+    mv      a0, s9          # move size back from s9 into a0 as argument
+    mv      a1, s11         # move offset from s11 back into a1
+    call    push_addr
+    call    mem_print
+
+    j       idle
+
 device_data:
 
     li      a6, BIOSST_DD
@@ -578,7 +590,31 @@ bios_log:
     j       idle
 
 program_run:
+    li      a6, BIOSST_PGEX
+    call    push_addr
+    call    update_state    # update state
 
+    srli    t0, s10, 10     # program telemetry enable
+    andi    t0, t0, 0x01    # mask out other bits
+    srli    t1, s10, 11     # program telemetry reset
+    andi    t1, t1, 0x01    # mask out other bits
+    li      t2, ADDR_META_CONTROL
+    lbu     t3, 0(t2)       # load the control bits for telemetry rn
+
+    beqz    t0, 1f          # for enable bit (jump if not set)
+    ori     t3, t3, 0x02
+    j       2f
+1:
+    andi    t3, t3, 0xFD
+2:
+
+    beqz    t0, 3f          # for reset bit (jump if not set)
+    ori     t3, t3, 0x01    # set the reset bit (set reset bit to one to assert a reset)
+    nop                     # one cycle stability
+    andi    t3, t3, 0xFE    # reset the reset bit (basically, set reset bit to zero again)
+
+    jr      s11             # jump to program start offset
+3:  
 
 # HELPERS
 
@@ -745,6 +781,7 @@ check_size:
     ret
 1:
     j       critical_error              # critical error raised if offset is higher than allocated memory top
+
 
 # HANDLERS
 timeout_handler:    # uses a5 for checking handler type
