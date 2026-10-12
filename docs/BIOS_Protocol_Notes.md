@@ -250,9 +250,9 @@ Options to be able to be configured:
 - `clk` gives configured CPU design clock speed (10Mhz)
 - `baud` gives configured CPU UART baud tick (9600)
 
-### `updateinfo --info=[arch, reg, rom, ram, mem, clk, baud]`
-- Updates the terminal with the device info once again. This already happens once automatically during POST, but can be done however many times later on.
-- Updating the device info to the terminal allows the application to verify details about the CPU from the get-go before running the command and transmitting it to the CPU.
+### `sync`
+- Syncs the current device state and data to that of the terminal.
+- Updating the device state to the terminal allows the application to verify details about the CPU from the get-go before running the command and transmitting it to the CPU.
 
 ### `sendbyte [byte]`
 - Sends a byte to the UART receiver of the CPU
@@ -277,8 +277,7 @@ Options to be able to be configured:
 - Dumps the entire hex of the program in bytes from a given address.
 - The `--offset` parameter is the start address from where the hex dump will begin. It is a mandatory parameter.
 - The `--size` parameter is the number of bytes from the offset that the hex dump will print. It is a mandatory parameter.
-- If the offset is invalid, the program will refuse to print the bytes. But if the offset is valid and `BYTE_COUNT` causes it to go out of bounds, the terminal will print `XX` instead for each byte in the Invalid region. Addresses that fall within MMIO are valid and will print the actual (likely `0x00` for unmapped devices) byte values rather than `XX`. To prevent `XX` from appearing at all, the `-v` parameter can be used to verify if the requested byte range is valid, and will fail to run if it is not.
-
+- If the offset is invalid, or `BYTE COUNT` goes out of bounds, the program will refuse to print the bytes.
 ### `help`
 - Provides the list of terminal commands and helpful info.
 

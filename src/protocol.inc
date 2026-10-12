@@ -6,10 +6,12 @@
 .equ TB_ST_INIT,     0x5A
 # TELEMETRY
 .equ TB_META_START,  0x7A
-.equ TB_META_CNTTR,  0x70
-.equ TB_META_INRST,  0x71
-.equ TB_META_PRGTR,  0x72
-.equ TB_META_PGRST,  0x73
+.equ TB_META_BIOSTR, 0x70   # bios telemetry
+.equ TB_META_RESET,  0x71   # instant reset
+.equ TB_META_PRGTR,  0x72   # program telemetry
+.equ TB_META_PRGRST, 0x73   # program telemetry reset
+    .equ META_STNG_OFF  0x00
+    .equ META_STNG_ON   0x01
 # MEMORY
 .equ TB_MEM_DUMP,    0x8A
 # CONNECTION
@@ -66,8 +68,8 @@
     .equ DD_PARAM_ROMSZ,     0x0A
 # BIOS STATE MONITORING
 .equ FB_BIOSST_LOG,  0xFA
-    .equ BIOSST_LOG_ON,  0x00
-    .equ BIOSST_LOG_OFF, 0x01
+    .equ BIOSST_LOG_OFF, 0x00
+    .equ BIOSST_LOG_ON,  0x01
 .equ FB_BIOSST_UPDT, 0xF0
     .equ BIOSST_IDLE,    0x00
     .equ BIOSST_MSG,     0x03
@@ -88,6 +90,8 @@
     .equ ERR_GET_MSG_UNVERIFIED, 0x03
 .equ ERR_SELF_TEST,      0xE5
 .equ ERR_TELEMETRY,      0xE7
+    .equ ERR_META_PARAM_INVALID, 0x01
+    .equ ERR_META_ARG_INVALID,   0x02
 .equ ERR_MEMORY,         0xE8
     .equ ERR_MEM_OUT_OF_BOUNDS   0x01
 .equ ERR_CONNNECT,       0xEA
@@ -98,4 +102,4 @@
 .equ ERR_CRITICAL,       0xEE   
 .equ ERR_BIOS,           0xEF
     .equ ERR_BIOS_TIMEOUT,       0x01
-    .equ ERR_BIOS_LOG_INV_OPT,   0x02
+    .equ ERR_BIOS_ARG_INVALID,   0x02

@@ -11,9 +11,16 @@
 .equ ROM_START,         0x0
 .equ ROM_SIZE,          0x1000
 
-.equ BIOS_STACK_SIZE    64                          # 64 bytes allocated for BIOS
+# Telemetry
+.equ ADDR_META_CONTROL,     0x80001000
+.equ ADDR_META_INSTR,       0x80001005
+.equ ADDR_META_STALL,       0x80001008
+.equ ADDR_META_L_USE,       0x8000100C
+.equ ADDR_META_BR_FLUSH,    0x80001010
 
-.include "protocol.inc"
+.equ BIOS_STACK_SIZE,   64                          # 64 bytes allocated for BIOS
+
+.include "protocol.inc"     # <---- all da protocol codez in here :3
 
 # REGISTER USAGE:
 # a0 - callee return value 1
@@ -31,6 +38,9 @@
         # [7:0]: BIOS Status Byte
         # [8]: BIOS Connection Valid
         # [9]: BIOS Status Flush (State logging)
+        # [10]: BIOS Telemetry Enable
+        # [11]: Program Telemetry Enable
+        # [12]: Program Telemetry Reset
     # s11 - Program Start Offset
 
 # MEMORY LAYOUT:
@@ -158,8 +168,56 @@ msg_echo:
 self_test:
 
 telemetry:
+    li      a6, BIOSST_META
+    call    push_addr
+    call    update_state    # update state
+
+    li      t1, 4           # for four possible arguments (bios tele, prog tele, inst telereset, prog telereset)
+1:
+    call    uart_rx         # get byte
+    li      t0, TB_META_BIOSTR
+    beq     a0, t0, 3f      # BIOS telemetry tracking
+    li      t0, TB_META_PRGTR
+    beq     a0, t0, 4f      # program telemetry tracking
+    li      t0, TB_META_PRGRST
+    beq     a0, t0, 5f      # program telemetry reset
+    li      t0, TB_META_RESET
+    beqz    a0, t0, 7f      # instant reset telemetry now
+    j       2f              # invalid argument
+3:
+    li      t1, 10          # 10 is s10 bit number for option bios telemetry tarcking
+    j       6f
+4:
+    li      t1, 11          # 11 is s10 bit number for option bios telemetry tarcking
+    j       6f
+5:
+    li      t1, 12          # 12 is s10 bit number for option bios telemetry tarcking
+    j       6f
+6:
+    li      t0, 1
+    slli    t0, t0, t1      # shift the '1' to the amount set by the previous label to mask said bit
+    call    
+7:
+    li      t0, ADDR_META_CONTROL   # meta control byte address
+    lbu     t1, 0(t0)               # get current meta control status
+    nop                             # load use stall
+    mv      t2, t1                  # save status in t1
+    ori     t1, t1, 0x01            # LSB is reset, assert high
+    sb      t1, 0(t0)               # store it
+    nop                             # nop for stability (may be removed later)
+    sb      t2, 0(t0)               # store original status back again to finish reset assertion
+    
+    j       1b
+2:
+    li      a0, ERR_TELEMETRY
+    li      a1, ERR_META_ARG_INVALID
+    j       error_handler
 
 memdump:
+    li      a6, BIOSST_MEM
+    call    push_addr
+    call    update_state    # update state
+
     call    push_addr       
     call    get_word        # get size word
     mv      a0, t0          
@@ -285,7 +343,7 @@ bios_log:
     addi    a0, a0, -1      # subtract 1 to check if equal to zero
     beqz    a0, 2f          # jump to switch on logic
     li      a0, ERR_BIOS
-    li      a1, ERR_BIOS_LOG_INV_OPT    # invalid option (didnt select from 0x00 or 0x01)
+    li      a1, ERR_BIOS_ARG_INVALID    # invalid option (didnt select from 0x00 or 0x01)
     j       error_handler
 1:
     andi    s10, 0xFFFFFDFF # mask to reset 9th bit (bios state update)
