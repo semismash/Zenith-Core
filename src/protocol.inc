@@ -10,17 +10,21 @@
 .equ TB_META_PRGTR,  0x71   # program telemetry
 .equ TB_META_PRGRST, 0x72   # program telemetry reset
 .equ TB_META_RESET,  0x73   # instant reset
-    .equ META_ARG_OFF  0x00
-    .equ META_ARG_ON   0x01
+    .equ META_ARG_OFF,  0x00
+    .equ META_ARG_ON,   0x01
 # MEMORY
 .equ TB_MEM_DUMP,    0x8A
 # CONNECTION
 .equ TB_NET_SYN,     0xAA
 .equ TB_NET_ACK,     0xAC
 # PROGRAM RUNTIME
-.equ TB_PRG_OFSADR,  0xC0
-.equ TB_PRG_SZ,      0xC1
 .equ TB_PRG_LOAD,    0xCA
+    .equ PRG_RUNNOW,    0xC0
+    .equ PRG_VERIFY,    0xC1
+    .equ PRG_OFFSET,    0xC2
+    .equ PRG_T_MODE,    0xC3
+    .equ PRG_T_RST,     0xC4
+    .equ PRG_REGDISP,   0xC5
 .equ TB_PRG_CC,      0xCC
 # DEVICE DATA
 .equ TB_DD_DATA,     0xDA
@@ -99,6 +103,9 @@
     .equ ERR_CONNECTION_INVALID, 0x01
     .equ ERR_CONNECTION_TIMEOUT, 0x02
 .equ ERR_PROGRAM,        0xEC
+    .equ ERR_PRG_UNVERIFIED,     0x01
+    .equ ERR_PRG_PARAM_INVALID,  0x02
+    .equ ERR_PRG_ARG_INVALID,    0x03
 .equ ERR_DEVICE_DATA,    0xED
 .equ ERR_CRITICAL,       0xEE   
 .equ ERR_BIOS,           0xEF

@@ -141,6 +141,8 @@ idle:
     beq     t0, t1, memory
     li      t1, TB_NET_ACK          # connection attempt
     beq     t0, t1, connect
+    li      t1, TB_PRG_LOAD         # program load
+    beq     t0, t1, program_load
     li      t1, TB_DD_DATA          # check device data request
     beq     t0, t1, device_data
     li      t1, TB_BIOS_DATA        # check if BIOS data monitoring is turned on
@@ -201,7 +203,7 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
     j       6f
 6:
     li      t0, 1
-    slli    t0, t0, t1      # shift the '1' to the amount set by the previous label to mask said bit
+    sll     t0, t0, t1      # shift the '1' to the amount set by the previous label to mask said bit
     call    uart_rx         # receive argument byte
     li      t2, META_ARG_ON
     beq     t0, t2, 8f      # if ON
@@ -268,7 +270,7 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
 13: 
     li      a0, ERR_TELEMETRY
     li      a1, ERR_META_UNVERIFIED
-    j       error_handler
+    j       error_handler   # holy shit it's exactly 100 lines long :o
 
 memdump:
     li      a6, BIOSST_MEM
@@ -309,6 +311,88 @@ connect:
     andi    s10, s10, 0xFFFFFEFF     # set connection bit (8th bit) to 0
     li      a0, ERR_CONNNECT
     li      a1, ERR_CONNECTION_INVALID
+    j       error_handler
+
+program_load:   # here, the s4 register is used like a temporary status register for this function or some shit idk
+    li      a6, program_load
+    call    push_addr
+    call    update_state        # update state    
+
+    li      t4, 6               # 6 possible arguments (run, verify, offset, telemetry mode, telemetry reset, register display)
+1:  
+    li      t0, TB_PRG_LOAD     # if arguments loaded... or not (recheck using the same verification byte again)
+    call    uart_rx
+    beq     a0, t0, 2f
+    beqz    t4, 11f             # jump to error (arguments exhausted, no verification guard byte received)
+
+    li      t0, PRG_RUNNOW      # parameter = run after load
+    beq     a0, t0, 3f
+    li      t0, PRG_VERIFY      # parameter = verify after load
+    beq     a0, t0, 4f
+    li      t0, PRG_OFFSET      # parameter = offset
+    beq     a0, t0, 5f
+    li      t0, PRG_T_MODE      # parameter = telemetry mode
+    beq     a0, t0, 6f
+    li      t0, PRG_T_RST       # parameter = telemetry reset
+    beq     a0, t0, 7f
+    li      t0, PRG_REGDISP     # parameter = register display after program completion
+    beq     a0, t0, 8f
+
+    j       9f                  # unrecognized parameter
+3:
+    ori     s4, s4, 0x01        # set bit zero (run)
+    j       15f
+4:
+    ori     s4, s4, 0x02        # set bit one (verify)
+    j       15f
+5:
+    mv      s5, t4              # technically not required as get_word never uses t4, probably will remove it later on
+    call    get_word            # but still safety to move out from temp reg before calling func
+    call    push_addr
+    mv      t4, s5
+    mv      s11, a0             # move program load offset into offset register (s11 is the program offset register, programs are loaded and run here)
+    j       15f
+6:
+    li      t1, 2               # bit two (telemetry mode) -> utilizes shifting (see label 12 below)
+    j       12f
+7:
+    li      t1, 3               # bit three (telemetry reset)
+    j       12f
+8:
+    li      t1, 4               # bit four (register display)
+    j       12f
+12:
+    li      t0, 1
+    sll     t0, t0, t1          # shift 1 the respective value to the left
+    call    uart_rx
+    li      t2, 0
+    beq     a0, t2, 13f         # if FALSE (0x00)
+    li      t2, 1
+    beq     a0, t2, 14f         # if TRUE (0x01)
+    j       10f                 # invalid argument otherwise
+13:
+    or      s4, s4, t0          # set the corresponding bit
+    j       15f
+14:
+    xori    t0, t0, -1
+    and     s4, s4, t0          # reset the corresponding bit
+15:
+    addi    t4, t4, -1          # decrement count
+    j       1f                  # go back in tloop
+2:
+    call    push_addr           # program get size
+    call    get_size
+9:
+    li      a0, ERR_PROGRAM
+    li      a0, ERR_PRG_PARAM_INVALID
+    j       error_handler
+10:
+    li      a0, ERR_PROGRAM
+    li      a0, ERR_PRG_ARG_INVALID
+    j       error_handler
+11:
+    li      a0, ERR_PROGRAM
+    li      a0, ERR_PRG_PARAM_INVALID
     j       error_handler
 
 device_data:

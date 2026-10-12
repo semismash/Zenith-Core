@@ -108,10 +108,10 @@ Options to be able to be configured:
 - `0x3F` - Message Finish
 - `0x5A` - Self-Test
 - `0x7A` - Telemetry Data
-- `0x70` - Toggle Continuous Telemetry Tracking
-- `0x72` - Toggle Program Telemetry Tracking
-- `0x71` - Instantaneous Telemetry Reset
-- `0x73` - Toggle Telemetry Reset on Program Start
+  - `0x70` - Toggle Continuous Telemetry Tracking
+  - `0x72` - Toggle Program Telemetry Tracking
+  - `0x71` - Instantaneous Telemetry Reset
+  - `0x73` - Toggle Telemetry Reset on Program Start
 - `0x8A` - Memory Dump
 - `0x80` - Offset Address
 - `0x81` - Dump Size (4 bytes)
@@ -208,7 +208,7 @@ Options to be able to be configured:
 - The `--telereset` flag enables or disables telemetry reset before the program executes. True by default (meaning it does reset). This is independent of `selftest` — running a self-test does not itself reset telemetry data unless `--telereset` separately causes it to.
 - The `--register` flag enables or disables displaying GPR values after program execution.
 
-### `run --offset=START_ADDRESS`
+### `run`
 - Run the loaded binary in the memory address
 - To begin running the binary at a different address, the `--offset` flag can be used (must be between `0x1000` and RAM limit).
 - Once execution begins, BIOS-interfacing commands will not receive a response until the CPU is reset, as there is currently no mechanism to return control to BIOS mid-program.
