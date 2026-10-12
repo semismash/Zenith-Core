@@ -120,6 +120,8 @@ reset:
     la      sp, bios_stack_top      # initialize stack
     addi    a4, x0, 0               # clear a4 register to prevent interference with UART rx timer (see uart_rx: label below)
 
+update:
+
 idle:
     li      a5, BIOSST_IDLE
     call    push_addr
@@ -167,14 +169,18 @@ msg_echo:
 
 self_test:
 
-telemetry:
+telemetry:  # while writing this function, one half of me was sleepy and the other half of me was depressed, pls don't judge
     li      a6, BIOSST_META
     call    push_addr
     call    update_state    # update state
 
-    li      t1, 4           # for four possible arguments (bios tele, prog tele, inst telereset, prog telereset)
-1:
+    li      t4, 4           # for four possible arguments (bios tele, prog tele, inst telereset, prog telereset)
+1:  
     call    uart_rx         # get byte
+    li      t0, TB_META_START
+    beq     a0, t0, 12f     # jump if start i.e. stop byte is received (same byte again for verification)
+    beqz    t4, 13f         # jump to error if args left = zero (safety bound, incase stop byte is not received again)
+
     li      t0, TB_META_BIOSTR
     beq     a0, t0, 3f      # BIOS telemetry tracking
     li      t0, TB_META_PRGTR
@@ -183,34 +189,85 @@ telemetry:
     beq     a0, t0, 5f      # program telemetry reset
     li      t0, TB_META_RESET
     beqz    a0, t0, 7f      # instant reset telemetry now
-    j       2f              # invalid argument
+    j       2f              # invalid param
 3:
     li      t1, 10          # 10 is s10 bit number for option bios telemetry tarcking
     j       6f
 4:
-    li      t1, 11          # 11 is s10 bit number for option bios telemetry tarcking
+    li      t1, 11          # 11 is s10 bit number for option program telemetry tarcking
     j       6f
 5:
-    li      t1, 12          # 12 is s10 bit number for option bios telemetry tarcking
+    li      t1, 12          # 12 is s10 bit number for option program telemetry reset
     j       6f
 6:
     li      t0, 1
     slli    t0, t0, t1      # shift the '1' to the amount set by the previous label to mask said bit
-    call    
+    call    uart_rx         # receive argument byte
+    li      t2, META_ARG_ON
+    beq     t0, t2, 8f      # if ON
+    li      t2, META_ARG_OFF
+    beq     t0, t2, 9f      # if OFF
+    # ^^ the above on and off branch logic will likely be merged with slt insturctions in the future to remove jump overhead
+    
+    j       10f
+8:
+    or      s10, s10, t0    # set respective bit in s10 using mask
+    j       11f     
+9:
+    xori    t0, t0, -1      # invert bitmask
+    and     s10, s10, t0    # reset respective bit in s10 using mask
+11:
+    addi    t4, t4, -1      # reduce count per arg
+    j       1b
 7:
     li      t0, ADDR_META_CONTROL   # meta control byte address
-    lbu     t1, 0(t0)               # get current meta control status
+    lbu     t2, 0(t0)               # get current meta control status
     nop                             # load use stall
-    mv      t2, t1                  # save status in t1
-    ori     t1, t1, 0x01            # LSB is reset, assert high
-    sb      t1, 0(t0)               # store it
-    nop                             # nop for stability (may be removed later)
-    sb      t2, 0(t0)               # store original status back again to finish reset assertion
+    ori     t2, t2, 0x01            # LSB is reset, assert high
+    sb      t2, 0(t0)               # store it
+    andi    t2, t2, 0xFE            # one's complement to reset that bit
+    sb      t2, 0(t0)               # store status with reset bit to finish reset assertion
     
-    j       1b
+    j       1b                      # loop back for next argument
+12:
+    addi    t1, t1, -4              # if arguments left was still 4 (immediately guard byte was send, meaning that user requested display of current telemetry settings)
+    bnez    t1, 14f
+
+    li   a0, 0x70                   # bit 10
+    call uart_tx
+    
+    andi a0, s10, 0x00000100        # mask bit 10 
+    snez a0, a0                     # set a0 to 1 if bit is on, 0 if off
+    call uart_tx
+
+    li   a0, 0x71                   # bit 11
+    call uart_tx
+    
+    andi a0, s10, 0x00000200        # mask bit 11 
+    snez a0, a0                     # set a0 to 1 if bit is on, 0 if off
+    call uart_tx
+
+    li   a0, 0x72                   # bit 12
+    call uart_tx
+    
+    andi a0, s10, 0x00000400        # mask bit 12 
+    snez a0, a0                     # set a0 to 1 if bit is on, 0 if off
+    call uart_tx
+  
+    j       idle
+14:
+    j       update                  # update new settings properly
 2:
     li      a0, ERR_TELEMETRY
+    li      a1, ERR_META_PARAM_INVALID
+    j       error_handler
+10:
+    li      a0, ERR_TELEMETRY
     li      a1, ERR_META_ARG_INVALID
+    j       error_handler
+13: 
+    li      a0, ERR_TELEMETRY
+    li      a1, ERR_META_UNVERIFIED
     j       error_handler
 
 memdump:

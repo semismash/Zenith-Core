@@ -7,11 +7,11 @@
 # TELEMETRY
 .equ TB_META_START,  0x7A
 .equ TB_META_BIOSTR, 0x70   # bios telemetry
-.equ TB_META_RESET,  0x71   # instant reset
-.equ TB_META_PRGTR,  0x72   # program telemetry
-.equ TB_META_PRGRST, 0x73   # program telemetry reset
-    .equ META_STNG_OFF  0x00
-    .equ META_STNG_ON   0x01
+.equ TB_META_PRGTR,  0x71   # program telemetry
+.equ TB_META_PRGRST, 0x72   # program telemetry reset
+.equ TB_META_RESET,  0x73   # instant reset
+    .equ META_ARG_OFF  0x00
+    .equ META_ARG_ON   0x01
 # MEMORY
 .equ TB_MEM_DUMP,    0x8A
 # CONNECTION
@@ -90,8 +90,9 @@
     .equ ERR_GET_MSG_UNVERIFIED, 0x03
 .equ ERR_SELF_TEST,      0xE5
 .equ ERR_TELEMETRY,      0xE7
-    .equ ERR_META_PARAM_INVALID, 0x01
-    .equ ERR_META_ARG_INVALID,   0x02
+    .equ ERR_META_UNVERIFIED,    0x01
+    .equ ERR_META_PARAM_INVALID, 0x02
+    .equ ERR_META_ARG_INVALID,   0x03
 .equ ERR_MEMORY,         0xE8
     .equ ERR_MEM_OUT_OF_BOUNDS   0x01
 .equ ERR_CONNNECT,       0xEA
