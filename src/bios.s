@@ -138,6 +138,8 @@ idle:
     mv      t0, a0                  # move result to t0 scratch reg
     
     # conditional switch table for all different intiialization bytes
+    li      t1, TB_PRG_RUN          # program run
+    beq     t0, t1, program_run
     li      t1, TB_MSG_ECHO         # check msg echo byte
     beq     t0, t1, msg_echo
     li      t1, TB_ST_INIT          # check self test init
@@ -150,6 +152,8 @@ idle:
     beq     t0, t1, connect
     li      t1, TB_PRG_LOAD         # program load
     beq     t0, t1, program_load
+    li      t1, TB_PRG_VERIFY       # program verification
+    beq     t0, t1, program_verify
     li      t1, TB_DD_DATA          # check device data request
     beq     t0, t1, device_data
     li      t1, TB_BIOS_DATA        # check if BIOS data monitoring is turned on

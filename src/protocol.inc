@@ -26,7 +26,7 @@
     .equ PRG_T_RST,     0xC4
     .equ PRG_REGDISP,   0xC5
 .equ TB_PRG_VERIFY,  0xCB   # different from the verify argument, this is for the actual command itself
-.equ TB_PRG_CC,      0xCC
+.equ TB_PRG_RUN,     0xCC
 # DEVICE DATA
 .equ TB_DD_DATA,     0xDA
 # BIOS DATA MONITORING
