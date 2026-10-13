@@ -38,6 +38,13 @@
 .equ FB_MSG_FLSH,    0x3F
 # SELF TEST
 .equ FB_ST_TESTBYTE, 0x50
+.equ FB_ST_RESULTS,  0x5D
+    .equ ST_PARAM_TEST_0     0x00
+    .equ ST_PARAM_TEST_1     0x01
+    .equ ST_PARAM_TEST_2     0x02
+    .equ ST_PARAM_TEST_3     0x03
+    .equ ST_PARAM_TEST_4     0x04
+    .equ ST_PARAM_TEST_5     0x05
 .equ FB_ST_PASS,     0x5C
 .equ FB_ST_FAIL,     0x5E
 .equ FB_ST_FINISH,   0x5F

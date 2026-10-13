@@ -42,6 +42,10 @@
         # [10]: BIOS Telemetry Enable
         # [11]: Program Telemetry Enable
         # [12]: Program Telemetry Reset
+        # vvv These bits are not automatically reset upon forced reset
+        # [16]: Prior Connection (first time connecting, or has been connected before)
+        # [17]: Self Test Passed
+        # [18-23]: Tests pass bitmask
     # s11 - Program Start Offset
 
 # MEMORY LAYOUT:
@@ -57,7 +61,7 @@
 
 .macro check_reg reg, idx
     li      t6, (0xDEAD0000 | \idx)      # t6 as a scratch reg, checked seperately later on
-    bne     \reg, t6, selftest_fail
+    bne     \reg, t6, selftest_reg_fail
 .endm
 
 .global _start
@@ -127,13 +131,13 @@ _start:
 # this is more of a developer specific reminder, but also one for those who see the codebase in this current commit
 # --------------------------------------
 
+    addi    s8, x0, 0   # clear s8 register (upon boot)
 
-post:
-
-self_test:
+self_test:  # cpu starts over here, with POST, also comes over here if triggered manually cia CLI
 
 # Test 1: Registers
 selftest_regs:
+
     # 1: write unique pattern in each register
     test_reg x1,  1
     test_reg x2,  2
@@ -150,22 +154,7 @@ selftest_regs:
     test_reg x13, 13
     test_reg x14, 14
     test_reg x15, 15
-    test_reg x16, 16
-    test_reg x17, 17
-    test_reg x18, 18
-    test_reg x19, 19
-    test_reg x20, 20
-    test_reg x21, 21
-    test_reg x22, 22
-    test_reg x23, 23
-    test_reg x24, 24
-    test_reg x25, 25
-    test_reg x26, 26
-    test_reg x27, 27
-    test_reg x28, 28
-    test_reg x29, 29
-    test_reg x30, 30
-    # 2: test unique pattern in each register
+    # test first 14 regs (i'm doing this cuz we are using s8 (x24) as our self-test status register)
     check_reg x1,  1
     check_reg x2,  2
     check_reg x3,  3
@@ -181,6 +170,26 @@ selftest_regs:
     check_reg x13, 13
     check_reg x14, 14
     check_reg x15, 15
+
+    mv      x1, s8      # temporarily move s8 into x1 to prevent overwriting by the upcoming test
+
+    # check next 15 regs (x16-x30)
+    test_reg x16, 16
+    test_reg x17, 17
+    test_reg x18, 18
+    test_reg x19, 19
+    test_reg x20, 20
+    test_reg x21, 21
+    test_reg x22, 22
+    test_reg x23, 23
+    test_reg x24, 24
+    test_reg x25, 25
+    test_reg x26, 26
+    test_reg x27, 27
+    test_reg x28, 28
+    test_reg x29, 29
+    test_reg x30, 30
+    # check remaining 15 regs
     check_reg x16, 16
     check_reg x17, 17
     check_reg x18, 18
@@ -197,16 +206,26 @@ selftest_regs:
     check_reg x29, 29
     check_reg x30, 30
 
+    mv      s8, x1  # move back into x1 (thank you, x1! :D)
+
     # test t6 register using x30 (already verified)
     li      x31, (0xDEAD0000 | 31)
     li      x30, (0xDEAD0000 | 31)
-    bne     x31, x30, selftest_fail
+    bne     x31, x30, selftest_reg_fail
 
     # check if x0 is hardwired to zero
     add     x30, x0, x0
-    bnez    x30, selftest_fail
+    bnez    x30, selftest_reg_fail
 
-    j       selftest_regs_pass
+    # s8 will be the status register to keep track of the number of passed tests from now on
+    # byte 0 = bitmask keeping track of passed tests; byte 1 = number of passed tests
+    ori     s8, s8, 0x01        # pass   (set bit 1)
+    addi    s8, s8, 0x100       # increase the counter in byte 1
+
+selftest_reg_fail:
+
+    # tests will be done sequentially, and a fail in one test will cause a fail in the entire self test, with each bit tracking the failed tests
+    # (corresponding bit corresponding to that test)
 
 # Test 2: ALU Operations
 selftest_alu:
@@ -215,52 +234,55 @@ selftest_alu:
     li      t1, 3
     add     t2, t0, t1
     li      t3, 8
-    bne     t2, t3, selftest_fail
+    bne     t2, t3, selftest_alu_fail
 
     li      t0, 0x7FFFFFFF
     li      t1, 1
     add     t2, t0, t1
     li      t3, 0x80000000
-    bne     t2, t3, selftest_fail
+    bne     t2, t3, selftest_alu_fail
 
     # and / or / xor
     li      t0, 0xF0F0F0F0
     li      t1, 0x0F0F0F0F
     and     t2, t0, t1
-    bnez    t2, selftest_fail          # F0F0F0F0 & 0F0F0F0F = 0
+    bnez    t2, selftest_alu_fail          # F0F0F0F0 & 0F0F0F0F = 0
 
     or      t2, t0, t1
     li      t3, 0xFFFFFFFF
-    bne     t2, t3, selftest_fail
+    bne     t2, t3, selftest_alu_fail
 
     xor     t2, t0, t1
-    bne     t2, t3, selftest_fail      # same bits, no overlap -> all 1s
+    bne     t2, t3, selftest_alu_fail      # same bits, no overlap -> all 1s
 
     # shifts: 0x80000001 exercises both bit 31 and bit 0
     li      t0, 0x80000001
     srli    t2, t0, 4
     li      t3, 0x08000000
-    bne     t2, t3, selftest_fail      # logical: zero-fill from top
+    bne     t2, t3, selftest_alu_fail      # logical: zero-fill from top
 
     srai    t2, t0, 4
     li      t3, 0xF8000000
-    bne     t2, t3, selftest_fail      # arithmetic: sign-extend from top
+    bne     t2, t3, selftest_alu_fail      # arithmetic: sign-extend from top
 
     slli    t2, t0, 4
     li      t3, 0x00000010
-    bne     t2, t3, selftest_fail
+    bne     t2, t3, selftest_alu_fail
 
     # slt / sltu
     li      t0, -1          # 0xFFFFFFFF
     li      t1, 1
     slt     t2, t0, t1
     li      t3, 1
-    bne     t2, t3, selftest_fail      # signed: -1 < 1 -> true
+    bne     t2, t3, selftest_alu_fail      # signed: -1 < 1 -> true
 
     sltu    t2, t0, t1
-    bnez    t2, selftest_fail          # unsigned: 0xFFFFFFFF < 1 -> false
+    bnez    t2, selftest_alu_fail          # unsigned: 0xFFFFFFFF < 1 -> false
 
-    j       selftest_alu_pass
+    ori     s8, s8, 0x02        # pass   (set bit 1)
+    addi    s8, s8, 0x100       # increase the counter in byte 1
+
+selftest_alu_fail:
 
 # TEST 3: CONTROL FLOW
 selftest_ctrl:
@@ -269,29 +291,29 @@ selftest_ctrl:
     li      t1, 5
     li      t3, 0
     beq     t0, t1, 1f
-    j       selftest_fail
+    j       selftest_ctrl_fail
 1:  li      t3, 1
     li      t4, 1
-    bne     t3, t4, selftest_fail
+    bne     t3, t4, selftest_ctrl_fail
 
     li      t0, 5
     li      t1, 6
     li      t3, 0
-    beq     t0, t1, selftest_fail      # should NOT be taken
+    beq     t0, t1, selftest_ctrl_fail      # should NOT be taken
     li      t3, 1
     li      t4, 1
-    bne     t3, t4, selftest_fail
+    bne     t3, t4, selftest_ctrl_fail
 
     # blt / bge
     li      t0, 3
     li      t1, 7
     blt     t0, t1, 2f
-    j       selftest_fail
+    j       selftest_ctrl_fail
 2:  li      t0, 7
     li      t1, 3
-    blt     t0, t1, selftest_fail      # should NOT be taken
+    blt     t0, t1, selftest_ctrl_fail      # should NOT be taken
     bge     t0, t1, 3f
-    j       selftest_fail
+    j       selftest_ctrl_fail
 3:
 
     # jal: verify link register holds correct return address
@@ -309,6 +331,10 @@ selftest_jalr_target:
     jr      ra
 
 selftest_ctrl_pass:
+    ori     s8, s8, 0x04        # pass (set bit 2)
+    addi    s8, s8, 0x100       # increase the counter in byte 1
+
+selftest_ctrl_fail:
 
 # TEST 4: MEMORY
 # addresses spanning program space: 0x1000, 0x8000, 0x10000, 0x1FFFC (word-aligned top)
@@ -317,45 +343,48 @@ selftest_mem:
     li      t1, 0xA1A1A1A1
     sw      t1, 0(t0)
     lw      t2, 0(t0)
-    bne     t1, t2, selftest_fail
+    bne     t1, t2, selftest_mem_fail
 
     li      t0, 0x8000
     li      t1, 0xB2B2B2B2
     sw      t1, 0(t0)
     lw      t2, 0(t0)
-    bne     t1, t2, selftest_fail
+    bne     t1, t2, selftest_mem_fail
 
     li      t0, 0x10000
     li      t1, 0xC3C3C3C3
     sw      t1, 0(t0)
     lw      t2, 0(t0)
-    bne     t1, t2, selftest_fail
+    bne     t1, t2, selftest_mem_fail
 
     li      t0, 0x1FFFC
     li      t1, 0xD4D4D4D4
     sw      t1, 0(t0)
     lw      t2, 0(t0)
-    bne     t1, t2, selftest_fail
+    bne     t1, t2, selftest_mem_fail
 
     # byte access
     li      t0, 0x1000
     li      t1, 0x5A
     sb      t1, 0(t0)
     lb      t2, 0(t0)
-    bne     t1, t2, selftest_fail
+    bne     t1, t2, selftest_mem_fail
 
     # halfword access
     li      t0, 0x1004
     li      t1, 0x1234
     sh      t1, 0(t0)
     lh      t2, 0(t0)
-    bne     t1, t2, selftest_fail
+    bne     t1, t2, selftest_mem_fail
 
-    j       selftest_mem_pass
+    ori     s8, s8, 0x08        # pass (set bit 3)
+    addi    s8, s8, 0x100       # increase the counter in byte 1
+
+selftest_mem_fail:
 
 # TEST 5: STACK
 selftest_sp:
-    li      sp, 0x21000         # BIOS stack top (per memory layout)
+    li      sp, RAM_TOP         # BIOS stack top (per memory layout)
 
     li      t0, 0x11111111
     li      t1, 0x22222222
@@ -369,35 +398,79 @@ selftest_sp:
     sw      t2, 0(sp)
 
     lw      t3, 0(sp)
-    bne     t3, t2, selftest_fail
+    bne     t3, t2, selftest_sp_fail
     addi    sp, sp, 4
 
     lw      t3, 0(sp)
-    bne     t3, t1, selftest_fail
+    bne     t3, t1, selftest_sp_fail
     addi    sp, sp, 4
 
     lw      t3, 0(sp)
-    bne     t3, t0, selftest_fail
+    bne     t3, t0, selftest_sp_fail
     addi    sp, sp, 4
 
-    li      t4, 0x21000
-    bne     sp, t4, selftest_fail   # sp should be back where it started
+    li      t4, RAM_TOP
+    bne     sp, t4, selftest_sp_fail   # sp should be back where it started
 
-    j       selftest_sp_pass
+    ori     s8, s8, 0x10        # pass (set bit 4)
+    addi    s8, s8, 0x100       # increase the counter in byte 1
+
+selftest_sp_fail:
 
 # 6: UART test
 selftest_uart:
     li      a0, FB_ST_TESTBYTE      # arbitrary known test byte
     call    uart_tx                 # if uart_tx returns at all (doesn't hang), transmit path is considered functional
-    j       selftest_uart_pass
+    
+    ori     s8, s8, 0x20        # pass (set bit 5)
+    addi    s8, s8, 0x100       # increase the counter in byte 1
 
+st_evaluate:
+    andi    t0, s8, 16          # mask out lowest byte to get bitmask of passed and failed tests
+    li      t1, 0x0000FF00      # get number of passed tests by masking byte 1
+    and     t1, s8, t1
+    srli    t1, t1, 8
+    li      t2, 0x00FF0000      # get whether test was POST or requested by master device by masking byte 2
+    and     t2, s8, t2
+    srli    t2, t2, 16
 
-# BIOS UTILITY
+    addi    t3, t1, -6          # check if equal to 6 tests or not
+    snez    t3, t3              # set as one if all tests passed, else set as zero
+    li      t4, 0x00020000      # mask bit 17
+    beqz    t3, 1f              # tests passed
+    or      t5, t5, t4          # update t5 (here t5 maps to the upper bits of s10, to be shifted later) bit 17 (self test passed) to true     
+    j       2f
+1:
+    xori    t4, t4, -1
+    and     t5, t5, t4          # update t5 bit 17 (self test failed) to false
+2:
+    slli    t4, t0, 18          # set 0-5 bits of bitmask in t0 to corresponding 18-23 bits in t5 register
+    lui     t3, 0xFC
+    and     t4, t4, t3
+    xori    t3, t3, -1
+    and     t5, t5, t3
+    or      t5, t5, t4
+
+    mv      s5, t0              # move bitmask into s5 register to survive function branch
+    mv      s6, t5              # move t5 status register into s6 (only contains upper bits)
+    beqz    t2, req_self_test_res       # go back to req self test if the indicator bit was high (i am high)
+
+    mv      s10, t5             # update s10 to t5 (we can do this because it means it is a POST initialization, since it didnt take prev branch)
+
+setup:
+
 reset:
     # initialize BIOS constants (UART mainly)
     la      s1, UART_STATUS             # s1 - UART STATUS
     addi    s2, s1, UART_RXD_OFFSET     # s2 - UART RX DATA
     addi    s3, s1, UART_TXD_OFFSET     # s3 - UART TX DATA
+    addi    s9, x0, 0                   # s9 - Program size register
+    addi    s10, s10, 0                 # s10 - BIOS status register
+    li      t1, 4
+    slli    t1, t1, 12
+    xori    t1, t1, -1
+    and     s10, s10, t1                # bits 12-15 (set to zero)
+    addi    s11, x0, 0                  # s11 - Program offset register
 
     la      sp, bios_stack_top      # initialize stack
     addi    a4, x0, 0               # clear a4 register to prevent interference with UART rx timer (see uart_rx: label below)
@@ -418,7 +491,7 @@ idle:
     li      t1, TB_MSG_ECHO         # check msg echo byte
     beq     t0, t1, msg_echo
     li      t1, TB_ST_INIT          # check self test init
-    beq     t0, t1, self_test
+    beq     t0, t1, req_self_test
     li      t1, TB_META_START       # check telemetry display innit
     beq     t0, t1, telemetry
     li      t1, TB_MEM_DUMP         # memory dump
@@ -435,6 +508,8 @@ idle:
     beq     t0, t1, bios_log
 
     j       idle                    # loop around if no valid command bytes, no error 
+
+# BIOS UTILITY
 
 msg_echo:
     li      a6, BIOSST_MSG
@@ -454,6 +529,71 @@ msg_echo:
     call    uart_tx         # transmit flush message towards the end
     
     j       idle            // slash slash comment cuz funny
+
+req_self_test:
+    li      a6, BIOSST_MSG
+    call    push_addr
+    call    update_state    # update state
+
+    # move existing BIOS status registers into known BIOS memory locations unaffected by registers
+    li      t0, PROGRAM_TOP
+    sw      s9, 4(t0)  
+    sw      s10, 8(t0)
+    sw      s11, 12(t0)
+
+    li      s8, 0x00010000  # byte 2 = 0x01 lets the BIOS know that its a requested re-self test and not a regular one
+    j       self_test
+
+req_self_test_res:
+    li      t0, PROGRAM_TOP
+    lw      s9, 4(t0)  
+    lw      s10, 8(t0)
+    lw      s11, 12(t0)
+
+    li      s1, UART_STATUS
+    addi    s2, UART_RXD_OFFSET
+    addi    s3, UART_TXD_OFFSET
+
+    mv      t0, s5          # move mask back from branch
+    li      t0, 0x00FF0000  # update s10 bits 16-23 to the new values of 16-23 (achived from s5 bitmask we stored)
+    and     t0, s5, t0
+    li      t1, 0xFF00FFFF
+    and     s10, s10, t1
+    or      s10, s10, t0
+
+    lui     t1, 0x20
+    xori    t1, t1, -1
+    and     t0, t0, t1      # get 17th bit to see if test passed or failed (ik this is inefficient, ill fix it later, im just so mentally tired man)
+    
+    bnez    t0, 1f          # if t0 is 0 after that, means test failed, so jump then
+    li      a0, FB_ST_PASS
+    call    uart_tx
+    j       2f
+1:
+    li      a0, FB_ST_FAIL
+    call    uart_tx
+2:
+
+    # give results of each test
+    li      t2, ST_PARAM_TEST_0
+    li      t3, t0, 6       # loop count (6 for 6 tests)
+    addi    t4, x0, x0      # loop counter
+
+    li      a0, FB_ST_RESULTS
+    call    uart_tx
+3:
+    addi    t2, t2, 1       # shift testcase number first
+    mv      t2, a0
+    call    uart_tx
+    srl     t1, t0, t4      # shift the mask to the right each time, to go through test cases
+    andi    t1, t1, 1       # get first bit only after shifting
+    snez    a0, t1          # set to pass or fail
+    call    uart_tx
+    bne     t3, t4, 3b      # go back to loop as long as loop counter doesnt hit 6 yet (t3)
+
+    li      a0, FB_ST_FINISH
+    call    uart_tx
+    j       idle
 
 telemetry:  # while writing this function, one half of me was sleepy and the other half of me was depressed, pls don't judge
     li      a6, BIOSST_META
@@ -890,8 +1030,10 @@ program_run:
     nop                     # one cycle stability
     andi    t3, t3, 0xFE    # reset the reset bit (basically, set reset bit to zero again)
 
+    li      sp, PROGRAM_TOP # set up stack pointer at top of the program space (0x20000)
     jr      s11             # jump to program start offset
 3:  
+    # TODO!
 
 # HELPERS
 
