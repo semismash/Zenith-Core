@@ -29,6 +29,7 @@
     # a4 - UART timeout custom
     # a5 - Timeout handler (0 = default, 1 = connection)
     # a6 - BIOS state update
+    # a7 - UART idle indicator (if uart not receiving anything since its in idle state or not or not)
 # t0-t6 - temporary function-specific variables
 # s0-s11 - global/high-lifetime variables
     # s1 - UART status
@@ -481,9 +482,11 @@ idle:
     li      a5, BIOSST_IDLE
     call    push_addr
     call    update_state            # update state to idle
-
+1:
+    addi    a7, x0, 1               # load as idle = 1 so uart_rx doesn't transmit timeout error upon timeout
     call    uart_rx                 # call uart rx in idle to receive command
     mv      t0, a0                  # move result to t0 scratch reg
+    addi    a7, x0, 0               # reset back to normal if byte received
     
     # conditional switch table for all different intiialization bytes
     li      t1, TB_PRG_RUN          # program run
@@ -507,7 +510,7 @@ idle:
     li      t1, TB_BIOS_DATA        # check if BIOS data monitoring is turned on
     beq     t0, t1, bios_log
 
-    j       idle                    # loop around if no valid command bytes, no error 
+    j       1b                    # loop around if no valid command bytes, no error 
 
 # BIOS UTILITY
 
@@ -1195,14 +1198,17 @@ check_size:
     sub     t1, t0, a1                  # subtract offset pointer address from top address to get remaining size
     bltz    t1, 1f                      # ensure that pointer is not greater than max allowed address
     slt     a0, a0, t1                  # (compare addresses) if message size too high, return result as 0 (fail), else return as 1
+2:
     call    pop_addr
     ret
 1:
-    j       critical_error              # critical error raised if offset is higher than allocated memory top
+    li      a0, 0
+    j       2b                          # error raised if offset is higher than allocated memory top
 
 
 # HANDLERS
 timeout_handler:    # uses a5 for checking handler type
+    bnez    a7, 2f                              # if it was in idle state, skip transmitting timeout errors
     beqz    a5, 1f                              # if zero, use default handler
     addi    t1, a5, -1                          # check for if 1
     beqz    t1, connection_timeout_handler      # if 1, use connection timeout handler
@@ -1212,6 +1218,7 @@ timeout_handler:    # uses a5 for checking handler type
     call    uart_tx
     li      a0, ERR_BIOS_TIMEOUT        # bios timeout error code
     call    uart_tx
+2:
     j       idle
 # ^^^ DEVELOPERS NOTE: this current implementation is used as there are no RX/TX FIFOs that allow staging multiple bytes at once
 # said feature will be added in the near future as an upgrade
