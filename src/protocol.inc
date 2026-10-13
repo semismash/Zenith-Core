@@ -37,6 +37,7 @@
 .equ FB_MSG_STR,     0x3D
 .equ FB_MSG_FLSH,    0x3F
 # SELF TEST
+.equ FB_ST_TESTBYTE, 0x50
 .equ FB_ST_PASS,     0x5C
 .equ FB_ST_FAIL,     0x5E
 .equ FB_ST_FINISH,   0x5F

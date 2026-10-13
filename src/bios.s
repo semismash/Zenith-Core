@@ -50,6 +50,16 @@
 # 0x00020000 - 0x00020FBF: BIOS DATA SPACE
 # 0x00020FC0 - 0x00021000: BIOS STACK (allocate 64 bytes (16 words) space for BIOS stack)
 
+# write and then verify x1-x31 (used by self-test)
+.macro test_reg reg, idx
+    li      \reg, (0xDEAD0000 | \idx)
+.endm
+
+.macro check_reg reg, idx
+    li      t6, (0xDEAD0000 | \idx)      # t6 as a scratch reg, checked seperately later on
+    bne     \reg, t6, selftest_fail
+.endm
+
 .global _start
 
 .section .rodata
@@ -117,6 +127,271 @@ _start:
 # this is more of a developer specific reminder, but also one for those who see the codebase in this current commit
 # --------------------------------------
 
+
+post:
+
+self_test:
+
+# Test 1: Registers
+selftest_regs:
+    # 1: write unique pattern in each register
+    test_reg x1,  1
+    test_reg x2,  2
+    test_reg x3,  3
+    test_reg x4,  4
+    test_reg x5,  5
+    test_reg x6,  6
+    test_reg x7,  7
+    test_reg x8,  8
+    test_reg x9,  9
+    test_reg x10, 10
+    test_reg x11, 11
+    test_reg x12, 12
+    test_reg x13, 13
+    test_reg x14, 14
+    test_reg x15, 15
+    test_reg x16, 16
+    test_reg x17, 17
+    test_reg x18, 18
+    test_reg x19, 19
+    test_reg x20, 20
+    test_reg x21, 21
+    test_reg x22, 22
+    test_reg x23, 23
+    test_reg x24, 24
+    test_reg x25, 25
+    test_reg x26, 26
+    test_reg x27, 27
+    test_reg x28, 28
+    test_reg x29, 29
+    test_reg x30, 30
+    # 2: test unique pattern in each register
+    check_reg x1,  1
+    check_reg x2,  2
+    check_reg x3,  3
+    check_reg x4,  4
+    check_reg x5,  5
+    check_reg x6,  6
+    check_reg x7,  7
+    check_reg x8,  8
+    check_reg x9,  9
+    check_reg x10, 10
+    check_reg x11, 11
+    check_reg x12, 12
+    check_reg x13, 13
+    check_reg x14, 14
+    check_reg x15, 15
+    check_reg x16, 16
+    check_reg x17, 17
+    check_reg x18, 18
+    check_reg x19, 19
+    check_reg x20, 20
+    check_reg x21, 21
+    check_reg x22, 22
+    check_reg x23, 23
+    check_reg x24, 24
+    check_reg x25, 25
+    check_reg x26, 26
+    check_reg x27, 27
+    check_reg x28, 28
+    check_reg x29, 29
+    check_reg x30, 30
+
+    # test t6 register using x30 (already verified)
+    li      x31, (0xDEAD0000 | 31)
+    li      x30, (0xDEAD0000 | 31)
+    bne     x31, x30, selftest_fail
+
+    # check if x0 is hardwired to zero
+    add     x30, x0, x0
+    bnez    x30, selftest_fail
+
+    j       selftest_regs_pass
+
+# Test 2: ALU Operations
+selftest_alu:
+    # add / sub
+    li      t0, 5
+    li      t1, 3
+    add     t2, t0, t1
+    li      t3, 8
+    bne     t2, t3, selftest_fail
+
+    li      t0, 0x7FFFFFFF
+    li      t1, 1
+    add     t2, t0, t1
+    li      t3, 0x80000000
+    bne     t2, t3, selftest_fail
+
+    # and / or / xor
+    li      t0, 0xF0F0F0F0
+    li      t1, 0x0F0F0F0F
+    and     t2, t0, t1
+    bnez    t2, selftest_fail          # F0F0F0F0 & 0F0F0F0F = 0
+
+    or      t2, t0, t1
+    li      t3, 0xFFFFFFFF
+    bne     t2, t3, selftest_fail
+
+    xor     t2, t0, t1
+    bne     t2, t3, selftest_fail      # same bits, no overlap -> all 1s
+
+    # shifts: 0x80000001 exercises both bit 31 and bit 0
+    li      t0, 0x80000001
+    srli    t2, t0, 4
+    li      t3, 0x08000000
+    bne     t2, t3, selftest_fail      # logical: zero-fill from top
+
+    srai    t2, t0, 4
+    li      t3, 0xF8000000
+    bne     t2, t3, selftest_fail      # arithmetic: sign-extend from top
+
+    slli    t2, t0, 4
+    li      t3, 0x00000010
+    bne     t2, t3, selftest_fail
+
+    # slt / sltu
+    li      t0, -1          # 0xFFFFFFFF
+    li      t1, 1
+    slt     t2, t0, t1
+    li      t3, 1
+    bne     t2, t3, selftest_fail      # signed: -1 < 1 -> true
+
+    sltu    t2, t0, t1
+    bnez    t2, selftest_fail          # unsigned: 0xFFFFFFFF < 1 -> false
+
+    j       selftest_alu_pass
+
+# TEST 3: CONTROL FLOW
+selftest_ctrl:
+    # beq taken / not-taken
+    li      t0, 5
+    li      t1, 5
+    li      t3, 0
+    beq     t0, t1, 1f
+    j       selftest_fail
+1:  li      t3, 1
+    li      t4, 1
+    bne     t3, t4, selftest_fail
+
+    li      t0, 5
+    li      t1, 6
+    li      t3, 0
+    beq     t0, t1, selftest_fail      # should NOT be taken
+    li      t3, 1
+    li      t4, 1
+    bne     t3, t4, selftest_fail
+
+    # blt / bge
+    li      t0, 3
+    li      t1, 7
+    blt     t0, t1, 2f
+    j       selftest_fail
+2:  li      t0, 7
+    li      t1, 3
+    blt     t0, t1, selftest_fail      # should NOT be taken
+    bge     t0, t1, 3f
+    j       selftest_fail
+3:
+
+    # jal: verify link register holds correct return address
+    jal     ra, selftest_jal_target
+    j       selftest_jal_check
+selftest_jal_target:
+    jr      ra
+selftest_jal_check:
+
+    # jalr: verify via register-held target
+    la      t0, selftest_jalr_target
+    jalr    ra, t0, 0
+    j       selftest_ctrl_pass
+selftest_jalr_target:
+    jr      ra
+
+selftest_ctrl_pass:
+
+# TEST 4: MEMORY
+# addresses spanning program space: 0x1000, 0x8000, 0x10000, 0x1FFFC (word-aligned top)
+selftest_mem:
+    li      t0, 0x1000
+    li      t1, 0xA1A1A1A1
+    sw      t1, 0(t0)
+    lw      t2, 0(t0)
+    bne     t1, t2, selftest_fail
+
+    li      t0, 0x8000
+    li      t1, 0xB2B2B2B2
+    sw      t1, 0(t0)
+    lw      t2, 0(t0)
+    bne     t1, t2, selftest_fail
+
+    li      t0, 0x10000
+    li      t1, 0xC3C3C3C3
+    sw      t1, 0(t0)
+    lw      t2, 0(t0)
+    bne     t1, t2, selftest_fail
+
+    li      t0, 0x1FFFC
+    li      t1, 0xD4D4D4D4
+    sw      t1, 0(t0)
+    lw      t2, 0(t0)
+    bne     t1, t2, selftest_fail
+
+    # byte access
+    li      t0, 0x1000
+    li      t1, 0x5A
+    sb      t1, 0(t0)
+    lb      t2, 0(t0)
+    bne     t1, t2, selftest_fail
+
+    # halfword access
+    li      t0, 0x1004
+    li      t1, 0x1234
+    sh      t1, 0(t0)
+    lh      t2, 0(t0)
+    bne     t1, t2, selftest_fail
+
+    j       selftest_mem_pass
+
+# TEST 5: STACK
+selftest_sp:
+    li      sp, 0x21000         # BIOS stack top (per memory layout)
+
+    li      t0, 0x11111111
+    li      t1, 0x22222222
+    li      t2, 0x33333333
+
+    addi    sp, sp, -4
+    sw      t0, 0(sp)
+    addi    sp, sp, -4
+    sw      t1, 0(sp)
+    addi    sp, sp, -4
+    sw      t2, 0(sp)
+
+    lw      t3, 0(sp)
+    bne     t3, t2, selftest_fail
+    addi    sp, sp, 4
+
+    lw      t3, 0(sp)
+    bne     t3, t1, selftest_fail
+    addi    sp, sp, 4
+
+    lw      t3, 0(sp)
+    bne     t3, t0, selftest_fail
+    addi    sp, sp, 4
+
+    li      t4, 0x21000
+    bne     sp, t4, selftest_fail   # sp should be back where it started
+
+    j       selftest_sp_pass
+
+# 6: UART test
+selftest_uart:
+    li      a0, FB_ST_TESTBYTE      # arbitrary known test byte
+    call    uart_tx                 # if uart_tx returns at all (doesn't hang), transmit path is considered functional
+    j       selftest_uart_pass
+
+
 # BIOS UTILITY
 reset:
     # initialize BIOS constants (UART mainly)
@@ -179,8 +454,6 @@ msg_echo:
     call    uart_tx         # transmit flush message towards the end
     
     j       idle            // slash slash comment cuz funny
-
-self_test:
 
 telemetry:  # while writing this function, one half of me was sleepy and the other half of me was depressed, pls don't judge
     li      a6, BIOSST_META
