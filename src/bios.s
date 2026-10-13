@@ -1030,10 +1030,9 @@ program_run:
     nop                     # one cycle stability
     andi    t3, t3, 0xFE    # reset the reset bit (basically, set reset bit to zero again)
 
+3:
     li      sp, PROGRAM_TOP # set up stack pointer at top of the program space (0x20000)
     jr      s11             # jump to program start offset
-3:  
-    # TODO!
 
 # HELPERS
 
