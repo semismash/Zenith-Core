@@ -494,6 +494,7 @@ reset:
     addi    a4, x0, 0               # clear a4 register to prevent interference with UART rx timer (see uart_rx: label below)
 
 update:
+    call    sync_bios_telemetry     # sync hardware meta_enable to BIOS's own telemetry setting before idling
 
 idle:
     li      sp, RAM_TOP             # re-heal stack every time BIOS returns to idle
@@ -1220,6 +1221,21 @@ check_size:
 1:
     li      a0, 0
     j       2b                          # error raised if offset is higher than allocated memory top
+
+sync_bios_telemetry:   # pushes s10 bit 10 (BIOS telemetry enable) out to hardware meta_enable
+    srli    t0, s10, 10
+    andi    t0, t0, 0x01
+    li      t1, ADDR_META_CONTROL
+    li      t2, ADDR_META_CONTROL_RD
+    lbu     t3, 0(t2)
+    beqz    t0, 1f
+    ori     t3, t3, 0x02
+    j       2f
+1:
+    andi    t3, t3, 0xFD
+2:
+    sb      t3, 0(t1)
+    ret
 
 
 # HANDLERS
