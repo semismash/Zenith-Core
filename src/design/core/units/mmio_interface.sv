@@ -9,6 +9,7 @@ typedef enum Word {
 
     // META
     META_CONTROL    = 32'h00001000,     // O; includes both meta_clear (LSB) + meta_enable (LSB + 1)
+    META_CONTROL_RD = 32'h00001001,     // I; read only mirror of META_CONTROL
     META_INSTR_C_0  = 32'h00001004,     // I
     META_INSTR_C_1  = 32'h00001005,     // I
     META_INSTR_C_2  = 32'h00001006,     // I
@@ -50,6 +51,7 @@ module mmio_interface (
     output Byte uart_tx_data,
     output logic uart_tx_start,
     input logic uart_tx_busy,
+    output logic uart_rx_ack,
     // TELEMTRY UNIT
     output logic meta_enable,
     output logic meta_clear,
@@ -135,6 +137,8 @@ module mmio_interface (
             UART_STATUS:        mmio_read_byte = p_uart_status;
             UART_RX_DATA:       mmio_read_byte = p_uart_rx_data;
 
+            META_CONTROL_RD:    mmio_read_byte = p_meta_control;
+
             META_INSTR_C_0:     mmio_read_byte = p_meta_instr_c_0;
             META_INSTR_C_1:     mmio_read_byte = p_meta_instr_c_1;
             META_INSTR_C_2:     mmio_read_byte = p_meta_instr_c_2;
@@ -187,6 +191,15 @@ module mmio_interface (
         end
     end
 
+    // finds whether this access is a non-write (read) that touches UART_RX_DATA in any lane
+    // drives uart_rx_ack below so the UART receiver knows the byte was actually consumed
+    logic rx_read_hit;
+    always_comb begin
+        rx_read_hit = !write_enable && mem_req_start &&
+                      (mem_addr_0 == UART_RX_DATA || mem_addr_1 == UART_RX_DATA ||
+                       mem_addr_2 == UART_RX_DATA || mem_addr_3 == UART_RX_DATA);
+    end
+
     // ----- ADD OUTPUT (WRITE PORTS) HERE -----
 
     // finds the lane which targetted TX_DATA
@@ -230,12 +243,14 @@ module mmio_interface (
 
             uart_tx_start   <= 1'b0;
             p_meta_control  <= '0;
+            uart_rx_ack     <= 1'b0;
         end else begin
 
             // initialization
             uart_tx_start   <= 1'b0;
             p_meta_control  <= '0;
             mmio_data_ready <= mem_req_start;     // set high when mem access data ready, LSU installs
+            uart_rx_ack     <= rx_read_hit;       // pulse ack one cycle after seeing what triggered it
 
             if (write_enable) begin     // output function
                 if (mem_req_start) begin
