@@ -21,6 +21,7 @@
 
 .equ BIOS_STACK_SIZE,   64                          # 64 bytes allocated for BIOS
 .equ CONNECTION_TIMEOUT_CYCLES, 0x8F00000           # connection_timeout form
+.equ MSG_ECHO_BUF,      0x20800                     # dedicated 256-byte destination buffer for msg_echo's gets() call, separate from the PROGRAM_TOP+0x0-0xF register-save scratch
 
 .include "protocol.inc"     # <---- all da protocol codez in here :3
 
@@ -534,7 +535,7 @@ msg_echo:
     li      a6, BIOSST_MSG
     call    update_state    # update state  
     
-    li      a1, PROGRAM_TOP # destination buffer address to store string # FLAGGED: NEED TO RECHECK
+    li      a1, MSG_ECHO_BUF # destination buffer address to store string
     call    gets            # get input string of byte size a long with size
     mv      s7, a0          
 
@@ -1049,7 +1050,6 @@ program_run:
     beqz    t1, 3f          # for reset bit (jump if not set)
     ori     t3, t3, 0x01    # set the reset bit (set reset bit to one to assert a reset)
     sb      t3, 0(t2)       # assert reset bit to hardware as pulse
-    nop                     # one cycle stability
     andi    t3, t3, 0xFE    # reset the reset bit (basically, set reset bit to zero again)
     sb      t3, 0(t2)       # deassert reset bit
 
