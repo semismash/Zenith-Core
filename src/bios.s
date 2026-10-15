@@ -13,14 +13,18 @@
 
 # Telemetry
 .equ ADDR_META_CONTROL,     0x80001000
-.equ ADDR_META_INSTR,       0x80001005
+.equ ADDR_META_CONTROL_RD,  0x80001001              # read only mirror of above quantity
+.equ ADDR_META_INSTR,       0x80001004
 .equ ADDR_META_STALL,       0x80001008
 .equ ADDR_META_L_USE,       0x8000100C
 .equ ADDR_META_BR_FLUSH,    0x80001010
 
 .equ BIOS_STACK_SIZE,   64                          # 64 bytes allocated for BIOS
+.equ CONNECTION_TIMEOUT_CYCLES, 0x8F00000           # connection_timeout form
 
 .include "protocol.inc"     # <---- all da protocol codez in here :3
+
+# <-------- DISCLAIMER: 90% of this code is human written. Some parts of the code were debugged using AI. All debugged code was human reviewed. ---------->
 
 # REGISTER USAGE:
 # a0 - callee return value 1
@@ -31,10 +35,10 @@
     # a6 - BIOS state update
     # a7 - UART idle indicator (if uart not receiving anything since its in idle state or not or not)
 # t0-t6 - temporary function-specific variables
+    # t6 - Reserved as the link register for the rx/tx macros (uart_rx/uart_tx), don't rely on it surviving a rx/tx call
 # s0-s11 - global/high-lifetime variables
-    # s1 - UART status
-    # s2 - UART RX DATA
-    # s3 - UART TX DATA
+    # s1 - UART status (RX_DATA/TX_DATA are now addressed as fixed offsets from this, see uart_rx/uart_tx)
+    # NOTE: s2 and s3 removed - previously used for rx and tx functions but no longer required
     # s9 - Loaded Program Size
     # s10 - BIOS Status Register
         # [7:0]: BIOS Status Byte
@@ -65,6 +69,29 @@
     bne     \reg, t6, selftest_reg_fail
 .endm
 
+# art_rx/uart_tx are now entered through these two macros instead of `call`
+# t6 is used as a dedicated link register here (and throughout the program in general
+# as uart_rx and uart_tx are leaf funcitons, programs can safely call it witout pushing to stack first, temporarily saving in t6
+.macro rx
+    jal     t6, uart_rx
+.endm
+.macro tx
+    jal     t6, uart_tx
+.endm
+
+# replaced push_addr and pop_addr w/ fn_enter and fn_leave
+# prevents the inner call from overwrting ra, which the callee function needs to return to its caller
+# generally only ever reached by a branch from idle dispatch table, so no ra of its own to protect, hence just jumps back to idle/update when done
+.macro fn_enter
+    addi    sp, sp, -4
+    sw      ra, 0(sp)
+.endm
+.macro fn_leave
+    lw      ra, 0(sp)
+    addi    sp, sp, 4
+    ret
+.endm
+
 .global _start
 
 .section .rodata
@@ -75,6 +102,7 @@ bios_start_msg_len: # length of below string + 0x00 for null term
     .word   26
 bios_start_msg:
     .string "BIOS Loaded Successfully!"
+    .align  2       # make sure to align correctly to 2 byte boundaries so program_start can utilize it correctly
 
 # Memory Layouts
 program_start:      # 0x1000
@@ -101,22 +129,18 @@ dd_name_len:
     .word   23
 dd_name:    # device bios name
     .string "Zenith Core BIOS v.1.0"
+    .align  2
 dd_arch_len:
     .word   24
 dd_arch:    # device arch
     .string "RISC-V | RV32I | 32-bit"
+    .align  2
 dd_regc:    # GPR count
     .word   32
 dd_clk:     # configured clock speed
     .word   10000000    # MHz
 dd_baud:    # configured UART baud tick rate
     .word   9600        # MHz
-
-# Program completion
-jump_back:
-    .word   0x67000000  # little endian words instruction for jalr x0, 0(x0)
-jump_back_reg_disp:
-    .word   0x67000000  # little endian words instruction for jalr x0, 0(x0) [SUBJECT TO CHANGE]
 
 # Other
 connection_timeout:
@@ -125,12 +149,6 @@ connection_timeout:
 .section .text
 
 _start:
-
-# ---------- DEVELOPER'S NOTE ----------
-# the push_addr stack utility command is currently being used in a lot of places for utility, specifically for nested loops
-# however there is a consideration of removing the command from many unnecessary places to improve performance and code density
-# this is more of a developer specific reminder, but also one for those who see the codebase in this current commit
-# --------------------------------------
 
     addi    s8, x0, 0   # clear s8 register (upon boot)
 
@@ -190,6 +208,10 @@ selftest_regs:
     test_reg x28, 28
     test_reg x29, 29
     test_reg x30, 30
+
+    mv      t1, x24         # save x24 (s8) current pattern before restoring below
+    mv      s8, x1          # move back into x1 (thank you, x1! :D)
+
     # check remaining 15 regs
     check_reg x16, 16
     check_reg x17, 17
@@ -199,15 +221,14 @@ selftest_regs:
     check_reg x21, 21
     check_reg x22, 22
     check_reg x23, 23
-    check_reg x24, 24
+    li      t6, (0xDEAD0000 | 24)   # check x24 saved pattern in t1 instead of x24 itself (since we moved s8 into t1 earlier)
+    bne     t1, t6, selftest_reg_fail
     check_reg x25, 25
     check_reg x26, 26
     check_reg x27, 27
     check_reg x28, 28
     check_reg x29, 29
     check_reg x30, 30
-
-    mv      s8, x1  # move back into x1 (thank you, x1! :D)
 
     # test t6 register using x30 (already verified)
     li      x31, (0xDEAD0000 | 31)
@@ -420,14 +441,16 @@ selftest_sp_fail:
 
 # 6: UART test
 selftest_uart:
-    li      a0, FB_ST_TESTBYTE      # arbitrary known test byte
-    call    uart_tx                 # if uart_tx returns at all (doesn't hang), transmit path is considered functional
+    la      s1, UART_STATUS         
+    li      a0, FB_ST_TESTBYTE  # arbitrary known test byte
+    tx                          
     
     ori     s8, s8, 0x20        # pass (set bit 5)
     addi    s8, s8, 0x100       # increase the counter in byte 1
 
 st_evaluate:
-    andi    t0, s8, 16          # mask out lowest byte to get bitmask of passed and failed tests
+    li      t5, 0               
+    andi    t0, s8, 0xFF        # mask out lowest byte to get bitmask of passed and failed tests
     li      t1, 0x0000FF00      # get number of passed tests by masking byte 1
     and     t1, s8, t1
     srli    t1, t1, 8
@@ -438,7 +461,7 @@ st_evaluate:
     addi    t3, t1, -6          # check if equal to 6 tests or not
     snez    t3, t3              # set as one if all tests passed, else set as zero
     li      t4, 0x00020000      # mask bit 17
-    beqz    t3, 1f              # tests passed
+    bnez    t3, 1f              
     or      t5, t5, t4          # update t5 (here t5 maps to the upper bits of s10, to be shifted later) bit 17 (self test passed) to true     
     j       2f
 1:
@@ -446,7 +469,7 @@ st_evaluate:
     and     t5, t5, t4          # update t5 bit 17 (self test failed) to false
 2:
     slli    t4, t0, 18          # set 0-5 bits of bitmask in t0 to corresponding 18-23 bits in t5 register
-    lui     t3, 0xFC
+    lui     t3, 0xFC0           
     and     t4, t4, t3
     xori    t3, t3, -1
     and     t5, t5, t3
@@ -454,24 +477,17 @@ st_evaluate:
 
     mv      s5, t0              # move bitmask into s5 register to survive function branch
     mv      s6, t5              # move t5 status register into s6 (only contains upper bits)
-    beqz    t2, req_self_test_res       # go back to req self test if the indicator bit was high (i am high)
+    bnez    t2, req_self_test_res       # go back to req self test if the indicator bit was high (i am high) 
 
     mv      s10, t5             # update s10 to t5 (we can do this because it means it is a POST initialization, since it didnt take prev branch)
 
-setup:
-
 reset:
     # initialize BIOS constants (UART mainly)
-    la      s1, UART_STATUS             # s1 - UART STATUS
-    addi    s2, s1, UART_RXD_OFFSET     # s2 - UART RX DATA
-    addi    s3, s1, UART_TXD_OFFSET     # s3 - UART TX DATA
-    addi    s9, x0, 0                   # s9 - Program size register
-    addi    s10, s10, 0                 # s10 - BIOS status register
-    li      t1, 4
-    slli    t1, t1, 12
-    xori    t1, t1, -1
-    and     s10, s10, t1                # bits 12-15 (set to zero)
-    addi    s11, x0, 0                  # s11 - Program offset register
+    la      s1, UART_STATUS         # s1 - UART STATUS
+    addi    s9, x0, 0               # s9 - Program size register
+    li      t1, 0xFFFF0000              
+    and     s10, s10, t1                
+    addi    s11, x0, 0              # s11 - Program offset register
 
     la      sp, bios_stack_top      # initialize stack
     addi    a4, x0, 0               # clear a4 register to prevent interference with UART rx timer (see uart_rx: label below)
@@ -479,12 +495,12 @@ reset:
 update:
 
 idle:
-    li      a5, BIOSST_IDLE
-    call    push_addr
+    li      sp, RAM_TOP             # re-heal stack every time BIOS returns to idle
+    li      a6, BIOSST_IDLE         
     call    update_state            # update state to idle
 1:
     addi    a7, x0, 1               # load as idle = 1 so uart_rx doesn't transmit timeout error upon timeout
-    call    uart_rx                 # call uart rx in idle to receive command
+    rx                              # call uart rx in idle to receive command
     mv      t0, a0                  # move result to t0 scratch reg
     addi    a7, x0, 0               # reset back to normal if byte received
     
@@ -498,8 +514,8 @@ idle:
     li      t1, TB_META_START       # check telemetry display innit
     beq     t0, t1, telemetry
     li      t1, TB_MEM_DUMP         # memory dump
-    beq     t0, t1, memory
-    li      t1, TB_NET_ACK          # connection attempt
+    beq     t0, t1, memdump         
+    li      t1, TB_NET_SYN          # connection attempt
     beq     t0, t1, connect
     li      t1, TB_PRG_LOAD         # program load
     beq     t0, t1, program_load
@@ -516,26 +532,25 @@ idle:
 
 msg_echo:
     li      a6, BIOSST_MSG
-    call    push_addr
-    call    update_state    # update state
+    call    update_state    # update state  
     
-    call    push_addr       # push address to stack
+    li      a1, PROGRAM_TOP # destination buffer address to store string # FLAGGED: NEED TO RECHECK
     call    gets            # get input string of byte size a long with size
+    mv      s7, a0          
 
     li      a0, FB_MSG_ECHO # send transmission byte starting message display attempt
-    call    uart_tx  
+    tx 
 
-    call    push_addr       # push address to stack again
+    mv      a0, s7
     call    puts            # print string via uart using puts
 
     li      a0, FB_MSG_FLSH
-    call    uart_tx         # transmit flush message towards the end
+    tx                       # transmit flush message towards the en
     
-    j       idle            // slash slash comment cuz funny
+    j       idle            
 
 req_self_test:
     li      a6, BIOSST_MSG
-    call    push_addr
     call    update_state    # update state
 
     # move existing BIOS status registers into known BIOS memory locations unaffected by registers
@@ -554,58 +569,55 @@ req_self_test_res:
     lw      s11, 12(t0)
 
     li      s1, UART_STATUS
-    addi    s2, UART_RXD_OFFSET
-    addi    s3, UART_TXD_OFFSET
 
-    mv      t0, s5          # move mask back from branch
     li      t0, 0x00FF0000  # update s10 bits 16-23 to the new values of 16-23 (achived from s5 bitmask we stored)
-    and     t0, s5, t0
+    and     t0, s6, t0      
     li      t1, 0xFF00FFFF
     and     s10, s10, t1
     or      s10, s10, t0
 
-    lui     t1, 0x20
-    xori    t1, t1, -1
-    and     t0, t0, t1      # get 17th bit to see if test passed or failed (ik this is inefficient, ill fix it later, im just so mentally tired man)
+    li      t1, 0x00020000   
+    and     t0, t0, t1       
     
-    bnez    t0, 1f          # if t0 is 0 after that, means test failed, so jump then
+    beqz    t0, 1f          # if t0 is 0 after that, means test failed, so jump then
     li      a0, FB_ST_PASS
-    call    uart_tx
+    tx
     j       2f
 1:
     li      a0, FB_ST_FAIL
-    call    uart_tx
+    tx
 2:
 
     # give results of each test
+    mv      t0, s5          
     li      t2, ST_PARAM_TEST_0
-    li      t3, t0, 6       # loop count (6 for 6 tests)
-    addi    t4, x0, x0      # loop counter
+    li      t3, 6           # loop count (6 for 6 tests)
+    li      t4, 0           # loop counter
 
     li      a0, FB_ST_RESULTS
-    call    uart_tx
+    tx
 3:
-    addi    t2, t2, 1       # shift testcase number first
-    mv      t2, a0
-    call    uart_tx
+    mv      a0, t2          
+    tx
     srl     t1, t0, t4      # shift the mask to the right each time, to go through test cases
     andi    t1, t1, 1       # get first bit only after shifting
     snez    a0, t1          # set to pass or fail
-    call    uart_tx
+    tx
+    addi    t2, t2, 1       # shift testcase number first
+    addi    t4, t4, 1       # increment loop counter
     bne     t3, t4, 3b      # go back to loop as long as loop counter doesnt hit 6 yet (t3)
 
     li      a0, FB_ST_FINISH
-    call    uart_tx
+    tx
     j       idle
 
 telemetry:  # while writing this function, one half of me was sleepy and the other half of me was depressed, pls don't judge
     li      a6, BIOSST_META
-    call    push_addr
     call    update_state    # update state
 
     li      t4, 4           # for four possible arguments (bios tele, prog tele, inst telereset, prog telereset)
 1:  
-    call    uart_rx         # get byte
+    rx                      # get byte
     li      t0, TB_META_START
     beq     a0, t0, 12f     # jump if start i.e. stop byte is received (same byte again for verification)
     beqz    t4, 13f         # jump to error if args left = zero (safety bound, incase stop byte is not received again)
@@ -617,7 +629,7 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
     li      t0, TB_META_PRGRST
     beq     a0, t0, 5f      # program telemetry reset
     li      t0, TB_META_RESET
-    beqz    a0, t0, 7f      # instant reset telemetry now
+    beq     a0, t0, 7f      # instant reset telemetry now
     j       2f              # invalid param
 3:
     li      t1, 10          # 10 is s10 bit number for option bios telemetry tarcking
@@ -631,11 +643,11 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
 6:
     li      t0, 1
     sll     t0, t0, t1      # shift the '1' to the amount set by the previous label to mask said bit
-    call    uart_rx         # receive argument byte
+    rx                      # receive argument byte
     li      t2, META_ARG_ON
-    beq     t0, t2, 8f      # if ON
+    beq     a0, t2, 8f      # if ON
     li      t2, META_ARG_OFF
-    beq     t0, t2, 9f      # if OFF
+    beq     a0, t2, 9f      # if OFF
     # ^^ the above on and off branch logic will likely be merged with slt insturctions in the future to remove jump overhead
     
     j       10f
@@ -649,8 +661,12 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
     addi    t4, t4, -1      # reduce count per arg
     j       1b
 7:
-    li      t0, ADDR_META_CONTROL   # meta control byte address
-    lbu     t2, 0(t0)               # get current meta control status
+    # META_CONTROL is write-only in hardware, so this reads back through the ADDR_META_CONTROL_RD mirror
+    # port (temporary fix, see mmio_interface.sv), while still writing to the normal ADDR_META_CONTROL
+    # address. Two separate addresses: t0 = write, t1 = read.
+    li      t0, ADDR_META_CONTROL      # meta control byte address (write)
+    li      t1, ADDR_META_CONTROL_RD   # meta control byte address (read mirror)
+    lbu     t2, 0(t1)               # get current meta control status
     nop                             # load use stall
     ori     t2, t2, 0x01            # LSB is reset, assert high
     sb      t2, 0(t0)               # store it
@@ -659,29 +675,32 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
     
     j       1b                      # loop back for next argument
 12:
-    addi    t1, t1, -4              # if arguments left was still 4 (immediately guard byte was send, meaning that user requested display of current telemetry settings)
+    addi    t1, t4, -4              # if arguments left was still 4 (immediately guard byte was send, meaning that user requested display of current telemetry settings)
     bnez    t1, 14f
 
     li   a0, 0x70                   # bit 10
-    call uart_tx
+    tx
     
-    andi a0, s10, 0x00000100        # mask bit 10 
+    li      t1, 0x00000400          # mask bit 10
+    and     a0, s10, t1
     snez a0, a0                     # set a0 to 1 if bit is on, 0 if off
-    call uart_tx
+    tx
 
     li   a0, 0x71                   # bit 11
-    call uart_tx
+    tx
     
-    andi a0, s10, 0x00000200        # mask bit 11 
+    li      t1, 0x00000800          # mask bit 11
+    and     a0, s10, t1
     snez a0, a0                     # set a0 to 1 if bit is on, 0 if off
-    call uart_tx
+    tx
 
     li   a0, 0x72                   # bit 12
-    call uart_tx
+    tx
     
-    andi a0, s10, 0x00000400        # mask bit 12 
+    li      t1, 0x00001000          # mask bit 12
+    and     a0, s10, t1
     snez a0, a0                     # set a0 to 1 if bit is on, 0 if off
-    call uart_tx
+    tx
   
     j       idle
 14:
@@ -697,60 +716,54 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
 13: 
     li      a0, ERR_TELEMETRY
     li      a1, ERR_META_UNVERIFIED
-    j       error_handler   # holy shit it's exactly 100 lines long :o
+    j       error_handler           # holy shit it's exactly 100 lines long :o (well almost, got changed after debugging :/)
 
 memdump:
     li      a6, BIOSST_MEM
-    call    push_addr
     call    update_state    # update state
 
-    call    push_addr       
     call    get_word        # get size word
-    mv      a0, t0          
+    mv      s7, a0          # save size in s7 register to save function call
 
-    call    push_addr
     call    get_word        # get offset word
-    mv      a0, t1
+    mv      a1, a0          # move offset to a1 to argument for next func
+    mv      a0, s7          # restore size to a0 for argument
 
-    mv      t0, a0          # move to respective argument positions
-    mv      t1, a1          # for the mem display function
-
-    call    push_addr
     call    mem_print       # call mem diplay function (a0 = size, a1 = offset)
 
     j       idle
 
 connect:
     li      a6, BIOSST_NET
-    call    push_addr
-    call    update_state        # update state
+    call    update_state                # update state
 
-    li      a0, FB_NET_SYNACK   # send back SYN-ACK byte to verify connection
-    call    uart_tx
-    li      a4, connection_timeout
+    li      a0, FB_NET_SYNACK           # send back SYN-ACK byte to verify connection
+    tx                          
+    li      a4, CONNECTION_TIMEOUT_CYCLES
     li      a5, 1
-    call    uart_rx             # verify ACK byte
+    rx                                  # verify ACK byte
     li      t0, TB_NET_ACK
-    bne     a0, t0, 1f          # if ACK is verified, connect successfully and update status, otherwise, jump to error_handler
-    ori     s10, s10, 0x00000100     # set connection bit to 1
+    bne     a0, t0, 1f                  # if ACK is verified, connect successfully and update status, otherwise, jump to error_handler
+    ori     s10, s10, 0x00000100        # set connection bit to 1
     j       idle
 1:
-    andi    s10, s10, 0xFFFFFEFF     # set connection bit (8th bit) to 0
+    li      t0, 0xFFFFFEFF           
+    and     s10, s10, t0                # set connection bit (8th bit) to 0
     li      a0, ERR_CONNNECT
     li      a1, ERR_CONNECTION_INVALID
     j       error_handler
 
 program_load:   # here, the s4 register is used like a temporary status register for this function or some shit idk
     # s4 status register = [4 (reg disp), 3 (telereset), 2 (telemode), 1 (verify), 0 (run)]
-    li      a6, program_load
-    call    push_addr
-    call    update_state        # update state    
+    li      a6, BIOSST_PGLD     
+    call    update_state        # update state
 
+    li      s4, 0               
     li      s11, PROGRAM_START  # default program start offset into s11 program offset register
     li      t4, 6               # 6 possible arguments (run, verify, offset, telemetry mode, telemetry reset, register display)
 1:  
     li      t0, TB_PRG_LOAD     # if arguments loaded... or not (recheck using the same verification byte again)
-    call    uart_rx
+    rx                          
     beq     a0, t0, 2f
     beqz    t4, 11f             # jump to error (arguments exhausted, no verification guard byte received)
 
@@ -776,8 +789,7 @@ program_load:   # here, the s4 register is used like a temporary status register
     j       15f
 5:
     mv      s5, t4              # technically not required as get_word never uses t4, probably will remove it later on
-    call    push_addr           # but still safety to move out from temp reg before calling func
-    call    get_word            
+    call    get_word
     mv      t4, s5
     mv      s11, a0             # move program load offset into offset register (s11 is the program offset register, programs are loaded and run here)
     j       15f
@@ -793,38 +805,36 @@ program_load:   # here, the s4 register is used like a temporary status register
 12:
     li      t0, 1
     sll     t0, t0, t1          # shift 1 the respective value to the left
-    call    uart_rx
+    rx                          # uart_rx -> rx macro
     li      t2, 0
     beq     a0, t2, 13f         # if FALSE (0x00)
     li      t2, 1
     beq     a0, t2, 14f         # if TRUE (0x01)
     j       10f                 # invalid argument otherwise
 13:
-    or      s4, s4, t0          # set the corresponding bit
-    j       15f
-14:
     xori    t0, t0, -1
     and     s4, s4, t0          # reset the corresponding bit
+    j       15f
+14:
+    or      s4, s4, t0          # TRUE must set the bit
 15:
     addi    t4, t4, -1          # decrement count
-    j       1f                  # go back in tloop
+    j       1b                  # go back in tloop
 
 2:
-    call    push_addr           # program get size
-    call    get_word
+    call    get_word            # program get size
     
     mv      a1, s11             # move offset into a1 as arg
     mv      s9, a0              # move into s9 program size register first
     mv      t0, a0              # move to t0 as check_size consumes a0
     addi    a0, a0, 4           # add 4 (1 word) to a0 for size measurement, need one extra word at the end for a jump instruction back to bios after program execution
-    call    push_addr           # check program size
-    call    check_size
-    beq     a0, 17f             # size is too big, fail to load program
+    call    check_size          # check program size
+    beqz    a0, 17f             # size is too big, fail to load program
 
     mv      t1, s11             # move offset pointer to t11 for use
     mv      t2, t0              # load program size again (for later use for mem dumps and shi), as t0 gets consumed right after this
 16:
-    call    uart_loop
+    rx                          
     sb      a0, 0(t1)           # store byte in memory
     addi    t1, t1, 1           # increment pointer (pointer goes upwards, wheeee!)
     addi    t0, t0, -1          # decerment byte count
@@ -834,39 +844,44 @@ program_load:   # here, the s4 register is used like a temporary status register
     mv      t0, t2              # move size bacak into t0
     srli    t2, s4, 4           # reg display bit
     beqz    t2, 18f
-    li      t2, jump_back_reg_disp
+    la      t2, jump_back_reg_disp 
     j       19f                 # if reg disp turned on, jump back to different address after executing (its in BIOS, for displaying reg values specifically)
 18:
-    li      t2, jump_back       # if reg disp is turned off, then just go back to start of bios as normal
+    la      t2, jump_back       # if reg disp is turned off, then just go back to start of bios as normal
+    # ^^^ jump_back and jump_back_reg_disp are labels that are to be implemented labels, the latter is supposed to display the contents of all 31 GPRs after program completion
+    # after jumping back, the BIOS is supposed the status registers back in correctly and go back to idle state after all is done
 19:
     sb      t2, 0(t1)           # finish loading program finally
 
     srli    t2, s4, 2           # program telemetry enable bit
     andi    t2, t2, 0x01        # mask out bit
     beqz    t2, 20f
-    ori     s10, s10, 0x00000400        # set 10th bit of bios status register (program telemetry enable)
+    li      t3, 0x00000800               
+    or      s10, s10, t3        # set 11th bit of bios status register (program telemetry enable)
     j       21f
 20:
-    andi    s10, s10, 0xFFFFFBFF        # reset 10th bit of bios status register (program telemetry enable)
+    li      t3, 0xFFFFF7FF               
+    and     s10, s10, t3        # also corrected to bit 11 (was clearing bit 10)
 21:
     
     srli    t2, s4, 3           # program telemetry reset bit
     andi    t2, t2, 0x01        # mask out bit
     beqz    t2, 22f
-    ori     s10, s10, 0x00000800        # set 11th bit of bios status register (program telemetry reset)
+    li      t3, 0x00001000               
+    or      s10, s10, t3        # set 12th bit of bios status register (program telemetry reset) 
     j       23f
 22:
-    andi    s10, s10, 0xFFFFF7FF        # reset 11th bit of bios status register (program telemetry reset)
+    li      t3, 0xFFFFEFFF               
+    and     s10, s10, t3        # also corrected to bit 12 (was clearing bit 11)
 23:
 
     srli    t2, s4, 1           # program verify bit
     andi    t2, t2, 0x01        # mask out bit
     beqz    t2, 24f             # if not set, skip verification
     li      a0, FB_PRG_VERIFY   # send uart tx flag bit for verification (read back)
-    call    uart_tx
+    tx                          
     mv      a0, s9              # move size back from s9 into a0 as argument for next func
     mv      a1, s11             # move offset from s11 back into a1
-    call    push_addr
     call    mem_print
 24:
     andi    t2, s4, 0x01        # program run bit (mask out)
@@ -876,29 +891,27 @@ program_load:   # here, the s4 register is used like a temporary status register
 
 9:
     li      a0, ERR_PROGRAM
-    li      a0, ERR_PRG_PARAM_INVALID
+    li      a1, ERR_PRG_PARAM_INVALID
     j       error_handler
 10:
     li      a0, ERR_PROGRAM
-    li      a0, ERR_PRG_ARG_INVALID
+    li      a1, ERR_PRG_ARG_INVALID
     j       error_handler
 11:
     li      a0, ERR_PROGRAM
-    li      a0, ERR_PRG_PARAM_INVALID
+    li      a1, ERR_PRG_PARAM_INVALID
     j       error_handler
 17:
     li      a0, ERR_PROGRAM
-    li      a0, ERR_PRG_TOO_BIG
+    li      a1, ERR_PRG_TOO_BIG
     j       error_handler
 
 program_verify:
     li      a6, BIOSST_MEM
-    call    push_addr
     call    update_state    # update state
 
     mv      a0, s9          # move size back from s9 into a0 as argument
     mv      a1, s11         # move offset from s11 back into a1
-    call    push_addr
     call    mem_print
 
     j       idle
@@ -906,88 +919,84 @@ program_verify:
 device_data:
 
     li      a6, BIOSST_DD
-    call    push_addr
     call    update_state    # update state
 
     li      a0, FB_DD_DISP  # device data display, send init byte
-    call    uart_rx
-    
+    tx                      
+
     li      a0, DD_PARAM_BIOS       # BIOS info
-    call    uart_rx
-    li      a0, dd_name_len         # load string size
+    tx
+    la      t0, dd_name_len         # load string length into register from memory
+    lw      a0, 0(t0)               
     la      a1, dd_name             # load offset pointer
-    call    push_addr
-    call    gets
+    call    puts                    # call puts to transmit info
 
     li      a0, DD_PARAM_ARCH       # architecture info
-    call    uart_rx
-    li      a0, dd_arch_len         # load string size
+    tx
+    la      t0, dd_arch_len         # load string length into register from memory
+    lw      a0, 0(t0)               
     la      a1, dd_arch             # load offset pointer
-    call    push_addr
-    call    gets
+    call    puts                    # call puts to transmit info
 
     li      a0, DD_PARAM_REGCNT     # register count
-    call    uart_rx
-    li      a0, dd_regc
-    call    push_addr
+    tx
+    la      t0, dd_regc             # load string length into register from memory
+    lw      a0, 0(t0)               
     call    send_word               # send as int word (yes ik regc is tiny number but it deals with words for quantities for consistency)
 
     li      a0, DD_PARAM_CLKSPD     # condigured clock speed
-    call    uart_rx
-    li      a0, dd_clk
-    call    push_addr
+    tx
+    la      t0, dd_clk              
+    lw      a0, 0(t0)               
     call    send_word               # send as word
 
     li      a0, DD_PARAM_BAUDTK     # configured baud tick
-    call    uart_rx
-    li      a0, dd_baud
-    call    push_addr
+    tx
+    la      t0, dd_baud             
+    lw      a0, 0(t0)               
     call    send_word               # send as word
     
     li      a0, DD_PARAM_RAMOFS     # ram offset
-    call    uart_rx
-    li      a0, program_start
-    call    push_addr
+    tx
+    la      t0, program_start       
+    lw      a0, 0(t0)               
     call    send_word               # send as word
 
     li      a0, DD_PARAM_RAMSZ      # ram size
-    call    uart_rx
-    li      a0, ram_size
-    call    push_addr
+    tx
+    la      t0, ram_size            
+    lw      a0, 0(t0)               
     call    send_word               # send as word
 
     li      a0, DD_PARAM_PROGOFS    # program offset (same as ram offset)
-    call    uart_rx
-    li      a0, program_start
-    call    push_addr
+    tx
+    la      t0, program_start       
+    lw      a0, 0(t0)               
     call    send_word               # send as word
 
     li      a0, DD_PARAM_PROGSZ     # program size
-    call    uart_rx
-    li      a0, program_size
-    call    push_addr
-    call    send_word               # send as word
+    tx
+    la      t0, program_size        
+    lw      a0, 0(t0)               
+    call    send_word               # send as word 
 
     li      a0, DD_PARAM_ROMOFS     # rom offset
-    call    uart_rx
-    li      a0, ROM_START
-    call    push_addr
+    tx
+    li      a0, ROM_START           # ROM_START/ROM_SIZE are plain .equ constants, not data labels -- li is correct here, unchanged
     call    send_word               # send as word
 
-    li      a0, DD_PARAM_ROMSZ     # rom size
-    call    uart_rx
+    li      a0, DD_PARAM_ROMSZ      # rom size
+    tx
     li      a0, ROM_SIZE
-    call    push_addr
     call    send_word               # send as word
 
     j       idle
 
 bios_log:
     li      a6, BIOSST_LOG_ST
-    call    push_addr
     call    update_state    # update state
 
-    call    uart_rx         # get byte indicating on (0x01) or off (0x00) for tracking
+    rx                      # get byte indicating on (0x01) or off (0x00) for tracking
     beqz    a0, 1f          # jump to switch off logic
     addi    a0, a0, -1      # subtract 1 to check if equal to zero
     beqz    a0, 2f          # jump to switch on logic
@@ -995,31 +1004,39 @@ bios_log:
     li      a1, ERR_BIOS_ARG_INVALID    # invalid option (didnt select from 0x00 or 0x01)
     j       error_handler
 1:
-    andi    s10, 0xFFFFFDFF # mask to reset 9th bit (bios state update)
-    li      a0, BIOSST_LOG          # acknowledgement sent to master device
-    call    uart_rx
+    li      t0, 0xFFFFFDFF           
+    and     s10, s10, t0             # mask to reset 9th bit (bios state update)
+    li      a0, FB_BIOSST_LOG        # acknowledgement sent to master device
+    tx                               
     li      a0, BIOSST_LOG_OFF
-    call    uart_rx
+    tx                               
     j       idle
 2:
-    ori     s10, 0x00000200 # mask to set 9th bit (bios state update)
-    li      a0, BIOSST_LOG          # acknowledgement sent to master device
-    call    uart_rx
+    ori     s10, s10, 0x00000200     # mask to set 9th bit (bios state update)
+    li      a0, FB_BIOSST_LOG        # acknowledgement sent to master device
+    tx                               
     li      a0, BIOSST_LOG_ON
-    call    uart_rx
+    tx                               
     j       idle
 
 program_run:
     li      a6, BIOSST_PGEX
-    call    push_addr
     call    update_state    # update state
 
-    srli    t0, s10, 10     # program telemetry enable
+    # load status registers into BIOS memoryduring program execution, so they can be retreived back after jump back
+    # WARNING: since there is no memory segmentation, the program instructions can directly overwrite BIOS allocated memory, and there are no inbuilt protection guards against it
+    li      t2, PROGRAM_TOP          
+    sw      s9, 4(t2)                
+    sw      s10, 8(t2)               # overwrite them, not load (which was clobbering s11 right before the `jr s11`
+    sw      s11, 12(t2)              # below, i.e. program_run could never actually have jumped anywhere valid)
+
+    srli    t0, s10, 11     # program telemetry enable
     andi    t0, t0, 0x01    # mask out other bits
-    srli    t1, s10, 11     # program telemetry reset
+    srli    t1, s10, 12     # program telemetry reset
     andi    t1, t1, 0x01    # mask out other bits
-    li      t2, ADDR_META_CONTROL
-    lbu     t3, 0(t2)       # load the control bits for telemetry rn
+    li      t2, ADDR_META_CONTROL      # meta control byte address (write)
+    li      t4, ADDR_META_CONTROL_RD   # meta control byte address (read mirror) -- META_CONTROL itself is write-only in hardware, see mmio_interface.sv note
+    lbu     t3, 0(t4)       # load the control bits for telemetry rn
 
     beqz    t0, 1f          # for enable bit (jump if not set)
     ori     t3, t3, 0x02
@@ -1027,11 +1044,14 @@ program_run:
 1:
     andi    t3, t3, 0xFD
 2:
+    sb      t3, 0(t2)       # write enable bit to to META_CONTROL
 
-    beqz    t0, 3f          # for reset bit (jump if not set)
+    beqz    t1, 3f          # for reset bit (jump if not set)
     ori     t3, t3, 0x01    # set the reset bit (set reset bit to one to assert a reset)
+    sb      t3, 0(t2)       # assert reset bit to hardware as pulse
     nop                     # one cycle stability
     andi    t3, t3, 0xFE    # reset the reset bit (basically, set reset bit to zero again)
+    sb      t3, 0(t2)       # deassert reset bit
 
 3:
     li      sp, PROGRAM_TOP # set up stack pointer at top of the program space (0x20000)
@@ -1039,39 +1059,32 @@ program_run:
 
 # HELPERS
 
-push_addr:  # push address to stack, always to be used before a call instruction to be used correctly
-    addi    t0, ra, 4       # add 4 bytes to caller address (skip two instructions ahead of caller, saved ra + 1 extra for skipping next call)
-    addi    sp, sp, -4      # decrement stack pointer
-    sw      t0, 0(sp)       # save address of stack pointer to stack
-    ret
+# NOTE: push_addr/pop_addr removed, see the developer's note near _start and the rx/tx marco definitions
+# further up. uart_rx/uart_tx are now leaf functions entered via the rx/tx macros (t6 as link
+# register, not ra), so every function that calls them keeps its own ra intact.
 
-pop_addr:
-    mv      t0, ra          # move current ra to t0
-    lw      ra, 0(sp)       # fetch top item from stack
-    addi    sp, sp, 4       # increment stack to decrease size
-    jr      t0              # jump to the previous ra value (return from original function call)
-
-uart_rx:    # UART polling loops (no interrupts yet :/), only sends lower byte, doesnt modify a0 at all
-    li      t1, DEFAULT_TIMEOUT_CYCLE
+uart_rx:    # in: a4 = custom timeout (0 = default), a7 = 1 to suppress the timeout error in idle | out: a0 = byte | clobbers t5, t6
+    li      t5, DEFAULT_TIMEOUT_CYCLE
     beqz    a4, 1f          # a4 is custom timeout parameter, if its already zeroed out, then use default (jump to 1 directly)
-    li      t1, a4          # load custom timeout if doesn't skip
+    mv      t5, a4
 1:
     lbu     t0, 0(s1)       # load UART status byte
-    addi    t1, t1, -1      # decrement timeout checker
-    beqz    t1, timeout_handler
+    addi    t5, t5, -1      # decrement timeout checker
+    beqz    t5, timeout_handler
     andi    t0, t0, 0x01    # mask only bit 1 (RX VALID)
     beqz    t0, 1b          # loop back while uart status is 0 (not yet valid)
-    lbu     a0, 0(s2)       # load data byte once status is nonzero (valid byte ready)
-    addi    a4, x0, 0       # clear a4 to default value again, a4 must be explicitly set when its to be called
-    ret
+    lbu     a0, 4(s1)       # load data byte once status is nonzero (valid byte ready)
+    li      a4, 0            # clear a4 to default value again, a4 must be explicitly set when its to be called
+    li      a5, 0
+    jr      t6 
 
-uart_tx:    # NOTE: no need for safety checker here, as its BIOS side, cannot timeout ideally
+uart_tx:    # NOTE: no need for safety checker here, as its BIOS side, cannot timeout ideally | in: a0 = byte | clobbers t5
 1:
-    lbu     t0, 0(s1)       # load UART status byte
-    andi    t0, t0, 0x02    # mask only bit 2 (TX BUSY)
-    bnez    t0, 1b          # wait till valid (until tx_busy != 1)
-    sb      a0, 0(s3)       # send data via UART channel once no longer busy
-    ret
+    lbu     t5, 0(s1)       # load UART status byte
+    andi    t5, t5, 0x02    # mask only bit 2 (TX BUSY)
+    bnez    t5, 1b          # wait till valid (until tx_busy != 1)
+    sb      a0, 8(s1)       # send data via UART channel once no longer busy
+    jr      t6              
 
 # BIOS Functions
 
@@ -1079,19 +1092,19 @@ send_word:  # sent in little endian order, return the original word too
     li      t0, 4           # 4 bytes per word
     mv      t1, a0          # temporarily store original word
 1:  
-    call    uart_rx         # send lower byte
-    srli    a0, a0, 8       # shift right one byte
+    tx                      # send lower byte
+    srli    t1, t1, 8       # shift right one byte
+    mv      a0, t1          # refresh a0 with the next byte to send
     addi    t0, t0, -1      # subtract once from loop variable
     bnez    t0, 1b          # go back if not yet zero (loop 4 times)
-    mv      a0, t1          # move word back to a0 to return for reuse
-    call    pop_addr
     ret
 
 get_word:   # little endian 4 byte word
     addi    t0, x0, 4       # loop 4 times for 4 bytes
     addi    t1, x0, 0       # initialize shift counter to 0 bits
+    li      t3, 0
 1:  
-    call    uart_rx
+    rx
     sll     t2, a0, t1      # shift new byte left by current shift counter (0 -> 8 -> 16 -> 24)
     or      t3, t3, t2      # merge the shifted byte into final reg
     addi    t1, t1, 8       # increment shift counter by 8 bits for the next byte
@@ -1099,67 +1112,64 @@ get_word:   # little endian 4 byte word
     bnez    t0, 1b          # go back if not yet 0
 
     mv      a0, t3          # move from temp register to return register
-    call    pop_addr        # pop stack saved address
     ret
 
 update_state:
     andi    a6, a6, 0xFF    # mask out lower byte of status update, in case
-    andi    s10, s10, 0xFF  # clear lower bytes of status register
-    or      s10, s0, a6     # load lower byte of a6 into s10 to update status
+    li      t0, 0xFFFFFF00
+    and     s10, s10, t0
+    or      s10, s10, a6    # load lower byte of a6 into s10 to update status
     andi    t1, s10, 0x00000200     # mask out 9th bit (status flush)
     beqz    t1, 1f          # if zero, then skip status flushing directly and return
     mv      t1, a0          # save existing return value (prevent return value loss from before)
     li      a0, FB_BIOSST_UPDT
-    call    uart_tx         # update push update bios state
+    tx                      # update push update bios state 
     mv      a0, a6          # push updated state as byte
-    call    uart_tx       
+    tx
+    mv      a0, t1
 1:
-    call    pop_addr
     ret
 
 mem_print:
+    fn_enter                
     mv      t0, a0          # size
     mv      t1, a1          # offset
-    call    push_addr
     call    check_size
     beqz    a0, 2f          # if size overflow
 1:  
     lbu     a0, 0(t1)       # load byte from memory
-    call    uart_tx         # send via uart tx
+    tx                      # send via uart tx
     addi    t0, t0, -1      # subtract 1 from size to reduce count
     addi    t1, t1, 1       # incremement offset pointer
     bnez    t0, 1b
 
-    call    pop_addr    
-    ret
+    fn_leave
 2:
     li      a0, ERR_MEMORY
     li      a1, ERR_MEM_OUT_OF_BOUNDS
     j       error_handler
 
 gets:
-    call    uart_rx
+    fn_enter                # calls check_size internally via call, to not overwrite ra and asve it instead
+    rx                      
     li      t0, TB_MSG_STR  # verify it is a string first
     bne     a0, t0, 3f      # jump to error handler if bytes not equal
 
-    call    push_addr
     call    get_word
     mv      s4, a0          # string size, move into s4 temporarily to survive check_size
-    call    push_addr
     call    check_size
     beqz    a0, 2f          # if message size too high, respective error  
     mv      t1, s4          # move size into t1
     mv      t0, a1          # move pointer into t0, a1 returns the offset pointer to be used by a potential puts later
 1:
-    call    uart_rx
+    rx                      
     sb      a0, 0(t0)       # store to pointer
     addi    t0, t0, 1       # incrememnt pointer
     addi    t1, t1, -1      # decrement counter
     bnez    t1, 1b          # loop as long as counter is not zero
 
     mv      a0, s4          # return size (saved in s4 earlier)
-    call    pop_addr
-    ret
+    fn_leave                
 2:
     li      a0, ERR_MESSAGE             # load a0 for error handler type indicator
     li      a1, ERR_GET_MSG_TOO_BIG     # load a1 for error handler exact type
@@ -1170,37 +1180,43 @@ gets:
     j       error_handler
 
 puts:
+    fn_enter                # calls check_size internally via call, to not overwrite ra
     mv      s4, a0          # string size 
-    call    push_addr
     call    check_size
     beqz    a0, 2f          # if message size is too high (as returned by check_size), raise error
     mv      t1, s4          # move size into t1
     mv      t0, a1          # move pointer into t0
 
     li      a0, FB_MSG_STR  # only start trasmitting the string after verifying tramissibility
-    call    uart_tx         # start with transmitting 0x3D prefix string byte
+    tx                       # start with transmitting 0x3D prefix string byte
+
+    mv      t2, s4           # send the 4-byte little-endian length next (puts was never actually sending it,
+    li      t3, 4            # per the confirmed protocol: 0x3D, then 4-byte length, then N bytes)
+3:  mv      a0, t2
+    tx                        # send next length byte
+    srli    t2, t2, 8         # shift to the next byte
+    addi    t3, t3, -1
+    bnez    t3, 3b
 1:
     lb      a0, 0(t0)       # load byte from pointer to register
-    call    uart_tx         # send via tx
+    tx                      # send via tx
     addi    t0, t0, 1       # increment pointer
     addi    t1, t1, -1      # decrement counter
     bnez    t1, 1b          # loop as long as counter is not zero
 
-    call    pop_addr
-    ret
+    fn_leave                
 2:
     li      a0, ERR_MESSAGE
-    li      a1, ERR_OUT_MSG_TOO_BIG
+    li      a1, ERR_PUT_MSG_TOO_BIG
     j       error_handler
 
 check_size:
-    li      t0, bios_data_top           # top address for BIOS data (end of stack)
-    sub     t1, t0, a1                  # subtract offset pointer address from top address to get remaining size
-    bltz    t1, 1f                      # ensure that pointer is not greater than max allowed address
-    slt     a0, a0, t1                  # (compare addresses) if message size too high, return result as 0 (fail), else return as 1
+    li      t0, RAM_TOP - BIOS_STACK_SIZE   # top address for BIOS data (end of stack)
+    sub     t1, t0, a1                      # subtract offset pointer address from top address to get remaining size
+    bltz    t1, 1f                          # ensure that pointer is not greater than max allowed address
+    slt     a0, a0, t1                      # (compare addresses) if message size too high, return result as 0 (fail), else return as 1
 2:
-    call    pop_addr
-    ret
+    ret                                 
 1:
     li      a0, 0
     j       2b                          # error raised if offset is higher than allocated memory top
@@ -1215,28 +1231,30 @@ timeout_handler:    # uses a5 for checking handler type
     j       critical_error                      # must match a handler, critical error otherwise
 1:
     li      a0, ERR_BIOS                # bios timeout error type
-    call    uart_tx
+    tx
     li      a0, ERR_BIOS_TIMEOUT        # bios timeout error code
-    call    uart_tx
+    tx
 2:
     j       idle
 # ^^^ DEVELOPERS NOTE: this current implementation is used as there are no RX/TX FIFOs that allow staging multiple bytes at once
 # said feature will be added in the near future as an upgrade
 
 connection_timeout_handler:     # specifically for connection timeout
-    li      a0, ERR_BIOS        # error type
-    call    uart_tx
-    li      a0, ERR_CONNNECT    # error code
-    call    uart_tx
+    li      a0, ERR_CONNNECT            # error type
+    tx 
+    li      a0, ERR_CONNECTION_TIMEOUT  # error codes
+    tx
     j       idle
 
 error_handler:
-    call    uart_tx     # call tx with error type in a0
+    tx                   # call tx with error type in a0
     mv      a0, a1      # move a1 (error code) to a0 for calling tx agagin
-    call    uart_tx     # call tx with error code, now in a0
+    tx                   # call tx with error code, now in a0
     j       idle        # jump back to idle state after error handling
 
 critical_error:     # generally meant for BIOS-side errors
     li      a0, ERR_CRITICAL    # load 0xEE for ciritcal error transmission to master device
-    call    uart_tx
-    j reset
+    tx                          
+    j       reset
+
+st_fail_idle:   # this is a specific limited state of the BIOS if it fails on POST, only functionality is connection
