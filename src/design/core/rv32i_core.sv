@@ -166,6 +166,7 @@ module rv32i_core (
     logic [7:0] uart_tx_data;
     logic       uart_tx_start;
     logic       uart_tx_busy;
+    logic       uart_rx_ack;
     logic       mmio_data_ready;
 
     // meta unit
@@ -466,6 +467,7 @@ module rv32i_core (
         .uart_tx_data       (uart_tx_data),
         .uart_tx_start      (uart_tx_start),
         .uart_tx_busy       (uart_tx_busy),
+        .uart_rx_ack        (uart_rx_ack),
         // TELEMETRY UNIT
         .meta_enable        (meta_enable),
         .meta_clear         (meta_clear),
@@ -566,6 +568,7 @@ module rv32i_core (
         .tx_busy          (uart_tx_busy),
         // rx
         .rx               (i_rx),
+        .rx_ack           (uart_rx_ack),
         .rx_data          (uart_rx_data),
         .rx_valid         (uart_rx_valid)
     );
