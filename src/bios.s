@@ -63,11 +63,11 @@
 
 # write and then verify x1-x31 (used by self-test)
 .macro test_reg reg, idx
-    li      \reg, (0xDEAD0000 | \idx)
+    li      \reg, ((\idx << 6) | \idx)
 .endm
 
 .macro check_reg reg, idx
-    li      t6, (0xDEAD0000 | \idx)      # t6 as a scratch reg, checked seperately later on
+    li      t6, ((\idx << 6) | \idx)      # t6 as a scratch reg, checked seperately later on
     bne     \reg, t6, selftest_reg_fail
 .endm
 
@@ -223,7 +223,7 @@ selftest_regs:
     check_reg x21, 21
     check_reg x22, 22
     check_reg x23, 23
-    li      t6, (0xDEAD0000 | 24)   # check x24 saved pattern in t1 instead of x24 itself (since we moved s8 into t1 earlier)
+    li      t6, ((24 << 6) | 24)   # check x24 saved pattern in t1 instead of x24 itself (since we moved s8 into t1 earlier)
     bne     t1, t6, selftest_reg_fail
     check_reg x25, 25
     check_reg x26, 26
@@ -233,8 +233,8 @@ selftest_regs:
     check_reg x30, 30
 
     # test t6 register using x30 (already verified)
-    li      x31, (0xDEAD0000 | 31)
-    li      x30, (0xDEAD0000 | 31)
+    li      x31, ((31 << 6) | 31)
+    li      x30, ((31 << 6) | 31)
     bne     x31, x30, selftest_reg_fail
 
     # check if x0 is hardwired to zero
@@ -807,7 +807,7 @@ connect:
     bnez    t0, 2f                      # skip the startup display if already shown
     call    display_self_test_results   # show BIOS startup message + pass/fail + per-test results once per new self test
     li      t0, 0x00010000              # mark prior-connection bit, so it won't repeat until the next self test
-    or      s10, s10, t0        
+    or      s10, s10, t0                
 2:
     j       idle_or_stfail              # resume full idle if the last self test passed, else stay in the limited POST-fail idle
 1:
