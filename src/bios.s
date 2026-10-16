@@ -806,7 +806,8 @@ connect:
     and     t0, s10, t0                 # check prior-connection bit (16), if set, results were already shown since the last self test
     bnez    t0, 2f                      # skip the startup display if already shown
     call    display_self_test_results   # show BIOS startup message + pass/fail + per-test results once per new self test
-    ori     s10, s10, 0x00010000        # mark prior-connection bit, so it won't repeat until the next self test
+    li      t0, 0x00010000              # mark prior-connection bit, so it won't repeat until the next self test
+    or      s10, s10, t0        
 2:
     j       idle_or_stfail              # resume full idle if the last self test passed, else stay in the limited POST-fail idle
 1:
