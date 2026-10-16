@@ -22,10 +22,11 @@
 .equ BIOS_STACK_SIZE,   64                          # 64 bytes allocated for BIOS
 .equ CONNECTION_TIMEOUT_CYCLES, 0x8F00000           # connection_timeout form
 .equ MSG_ECHO_BUF,      0x20800                     # dedicated 256-byte destination buffer for msg_echo's gets() call, separate from the PROGRAM_TOP+0x0-0xF register-save scratch
+.equ REG_DUMP_BUF,      0x20900                     # 124-byte (31 word) scratch buffer for jump_back_reg_disp's x1-x31 dump, placed right after MSG_ECHO_BUF
 
 .include "protocol.inc"     # <---- all da protocol codez in here :3
 
-# <-------- DISCLAIMER: 90% of this code is human written. Some parts of the code were debugged using AI. All debugged code was human reviewed. ---------->
+# <-------- DISCLAIMER: This code is human written. Some parts of the code were debugged using AI. All debugged code was thoroughly human reviewed. ---------->
 
 # REGISTER USAGE:
 # a0 - callee return value 1
@@ -493,6 +494,10 @@ reset:
     la      sp, bios_stack_top      # initialize stack
     addi    a4, x0, 0               # clear a4 register to prevent interference with UART rx timer (see uart_rx: label below)
 
+    li      t0, 0x00020000          # mask for self-test-pass bit (17), andi can't take an immediate this large, build the mask with li + and instead
+    and     t0, s10, t0             # check self-test-passed bit POST failures must drop into the limited connection-only idle state
+    beqz    t0, st_fail_idle
+
 update:
     call    sync_bios_telemetry     # sync hardware meta_enable to BIOS's own telemetry setting before idling
 
@@ -515,6 +520,8 @@ idle:
     beq     t0, t1, req_self_test
     li      t1, TB_META_START       # check telemetry display innit
     beq     t0, t1, telemetry
+    li      t1, TB_META_DISP        # check telemetry status display request
+    beq     t0, t1, telemetry_status
     li      t1, TB_MEM_DUMP         # memory dump
     beq     t0, t1, memdump         
     li      t1, TB_NET_SYN          # connection attempt
@@ -578,10 +585,22 @@ req_self_test_res:
     and     s10, s10, t1
     or      s10, s10, t0
 
-    li      t1, 0x00020000   
-    and     t0, t0, t1       
-    
-    beqz    t0, 1f          # if t0 is 0 after that, means test failed, so jump then
+    call    display_self_test_results  # display logic moved into a shared, callable routine (also used by connect for the first reconnect after a self test)
+    j       idle
+
+display_self_test_results:   # shared self-test results display (startup banner + pass/fail + per-test results); reads live from s10 bits 16-23 so it's valid for any caller, not just right after st_evaluate
+    fn_enter                       # protect ra, since this calls puts internally
+
+    la      t0, bios_start_msg_len # load string length into register from memory
+    lw      a0, 0(t0)               
+    la      a1, bios_start_msg     # load offset pointer
+    call    puts                   # print the BIOS startup banner
+    li      a0, FB_MSG_FLSH        # explicit flush byte to close the startup message framing
+    tx                              
+
+    li      t0, 0x00020000          # mask for the self-test-passed bit; andi can't take an immediate this large
+    and     t0, s10, t0             # self-test-passed bit (17), read straight from s10 instead of the local st_evaluate bitmask
+    beqz    t0, 1f
     li      a0, FB_ST_PASS
     tx
     j       2f
@@ -589,9 +608,8 @@ req_self_test_res:
     li      a0, FB_ST_FAIL
     tx
 2:
-
-    # give results of each test
-    mv      t0, s5          
+    srli    t0, s10, 18            # per-test bitmask now comes from s10 bits 18-23 (shifted down), rather than s5, which isn't valid once called later from connect
+    andi    t0, t0, 0x3F           # keep only the 6 test bits
     li      t2, ST_PARAM_TEST_0
     li      t3, 6           # loop count (6 for 6 tests)
     li      t4, 0           # loop counter
@@ -611,7 +629,8 @@ req_self_test_res:
 
     li      a0, FB_ST_FINISH
     tx
-    j       idle
+
+    fn_leave                        # return to caller (req_self_test_res or connect)
 
 telemetry:  # while writing this function, one half of me was sleepy and the other half of me was depressed, pls don't judge
     li      a6, BIOSST_META
@@ -720,6 +739,41 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
     li      a1, ERR_META_UNVERIFIED
     j       error_handler           # holy shit it's exactly 100 lines long :o (well almost, got changed after debugging :/)
 
+telemetry_status:    # implements the `status --telemetry` display; replies with each live counter value read straight from its MMIO address
+    li      a6, BIOSST_META         # reuse the telemetry display state code
+    call    update_state            # update state
+
+    li      a0, FB_META_DISP        # opening guard byte
+    tx
+
+    li      a0, META_PARAM_INSCNT   # instruction count
+    tx
+    li      t0, ADDR_META_INSTR
+    lw      a0, 0(t0)
+    call    send_word
+
+    li      a0, META_PARAM_STLCNT   # stall count
+    tx
+    li      t0, ADDR_META_STALL
+    lw      a0, 0(t0)
+    call    send_word
+
+    li      a0, META_PARAM_LSECNT   # load-use stall count
+    tx
+    li      t0, ADDR_META_L_USE
+    lw      a0, 0(t0)
+    call    send_word
+
+    li      a0, META_PARAM_BRFCNT   # branch-flush count
+    tx
+    li      t0, ADDR_META_BR_FLUSH
+    lw      a0, 0(t0)
+    call    send_word
+
+    li      a0, FB_META_DISP        # closing guard byte
+    tx
+    j       idle                    # return to idle
+
 memdump:
     li      a6, BIOSST_MEM
     call    update_state    # update state
@@ -747,7 +801,14 @@ connect:
     li      t0, TB_NET_ACK
     bne     a0, t0, 1f                  # if ACK is verified, connect successfully and update status, otherwise, jump to error_handler
     ori     s10, s10, 0x00000100        # set connection bit to 1
-    j       idle
+
+    li      t0, 0x00010000              # mask for the prior-connection bit; andi can't take an immediate this large
+    and     t0, s10, t0                 # check prior-connection bit (16), if set, results were already shown since the last self test
+    bnez    t0, 2f                      # skip the startup display if already shown
+    call    display_self_test_results   # show BIOS startup message + pass/fail + per-test results once per new self test
+    ori     s10, s10, 0x00010000        # mark prior-connection bit, so it won't repeat until the next self test
+2:
+    j       idle_or_stfail              # resume full idle if the last self test passed, else stay in the limited POST-fail idle
 1:
     li      t0, 0xFFFFFEFF           
     and     s10, s10, t0                # set connection bit (8th bit) to 0
@@ -853,7 +914,25 @@ program_load:   # here, the s4 register is used like a temporary status register
     # ^^^ jump_back and jump_back_reg_disp are labels that are to be implemented labels, the latter is supposed to display the contents of all 31 GPRs after program completion
     # after jumping back, the BIOS is supposed the status registers back in correctly and go back to idle state after all is done
 19:
-    sb      t2, 0(t1)           # finish loading program finally
+    sub     t3, t2, t1          #  t3 = byte offset from the jump-back instruction's address (t1) to its target (t2); encoded below as a jal instruction instead of storing a raw address
+    srli    t4, t3, 1           #  imm[10:1] -> instruction bits 21-30
+    andi    t4, t4, 0x3FF       #  keep only those 10 bits
+    slli    t4, t4, 21          #  move into position
+    li      t5, 0x0000006F      #  base encoding for `jal x0, <offset>` (opcode 1101111, rd = x0)
+    or      t5, t5, t4          #  merge imm[10:1]
+    srli    t4, t3, 11          #  imm[11] -> instruction bit 20
+    andi    t4, t4, 0x1
+    slli    t4, t4, 20
+    or      t5, t5, t4          #  merge imm[11]
+    srli    t4, t3, 12          #  imm[19:12]; andi can't take a mask this large, so shift-mask-shift instead of masking in place
+    andi    t4, t4, 0xFF        #  keep only those 8 bits
+    slli    t4, t4, 12          #  imm[19:12] sits at the same bit position in both the offset and the instruction
+    or      t5, t5, t4          #  merge imm[19:12]
+    srli    t4, t3, 20          #  imm[20] (sign bit) -> instruction bit 31
+    andi    t4, t4, 0x1
+    slli    t4, t4, 31
+    or      t5, t5, t4          #  merge imm[20]
+    sw      t5, 0(t1)           # finish loading program finally <- REVIEW THIS   #  now stores an encoded jal instruction instead of a raw address, resolving the review note (jump range is always well within jal's +/-1MiB limit here)
 
     srli    t2, s4, 2           # program telemetry enable bit
     andi    t2, t2, 0x01        # mask out bit
@@ -1058,6 +1137,80 @@ program_run:
     li      sp, PROGRAM_TOP # set up stack pointer at top of the program space (0x20000)
     jr      s11             # jump to program start offset
 
+# <---------- NOTE: The below two functions were initially written with the help of AI, but were thoroughly reviewed a human. ---------->
+jump_back:    #  default post-execution return target (no register display); restores BIOS's own s9/s10/s11, reinitializes s1 and sp, then returns to idle
+    li      t0, PROGRAM_TOP          #  these were saved here by program_run before execution began
+    lw      s9, 4(t0)                #  restore program size register
+    lw      s10, 8(t0)               #  restore BIOS status register
+    lw      s11, 12(t0)              #  restore program offset register
+
+    la      s1, UART_STATUS          #  reinitialize UART status pointer (the program may have repurposed s1 for its own use)
+    la      sp, bios_stack_top       #  re-heal BIOS stack
+    call    sync_bios_telemetry      #  push the restored (BIOS-side) telemetry enable setting out to hardware now that the program has ended, instead of leaving the program's setting active
+
+    j       idle                     #  return to full idle (program execution is only ever reachable once a self test has passed, so plain idle is correct here)
+
+jump_back_reg_disp:    #  post-execution return target when register display was requested; dumps x1-x31 (the program's live values) over UART, then does the same teardown as jump_back
+    li      t6, REG_DUMP_BUF         #  use x31 (t6) itself as the dump buffer base pointer, since it's the one register whose own live value can't be captured this way
+    sw      ra,  0(t6)               #  x1
+    sw      sp,  4(t6)               #  x2
+    sw      gp,  8(t6)               #  x3
+    sw      tp,  12(t6)              #  x4
+    sw      t0,  16(t6)              #  x5
+    sw      t1,  20(t6)              #  x6
+    sw      t2,  24(t6)              #  x7
+    sw      s0,  28(t6)              #  x8
+    sw      s1,  32(t6)              #  x9
+    sw      a0,  36(t6)              #  x10
+    sw      a1,  40(t6)              #  x11
+    sw      a2,  44(t6)              #  x12
+    sw      a3,  48(t6)              #  x13
+    sw      a4,  52(t6)              #  x14
+    sw      a5,  56(t6)              #  x15
+    sw      a6,  60(t6)              #  x16
+    sw      a7,  64(t6)              #  x17
+    sw      s2,  68(t6)              #  x18
+    sw      s3,  72(t6)              #  x19
+    sw      s4,  76(t6)              #  x20
+    sw      s5,  80(t6)              #  x21
+    sw      s6,  84(t6)              #  x22
+    sw      s7,  88(t6)              #  x23
+    sw      s8,  92(t6)              #  x24
+    sw      s9,  96(t6)              #  x25 (program's live value, captured before it's restored below)
+    sw      s10, 100(t6)             #  x26 (program's live value, captured before it's restored below)
+    sw      s11, 104(t6)             #  x27 (program's live value, captured before it's restored below)
+    sw      t3,  108(t6)             #  x28
+    sw      t4,  112(t6)             #  x29
+    sw      t5,  116(t6)             #  x30
+    sw      zero, 120(t6)            #  x31 (t6) was used as the dump base pointer above, so its original value is lost; reported as 0
+
+    li      t0, PROGRAM_TOP          #  now safe to restore BIOS's own status registers (same as jump_back)
+    lw      s9, 4(t0)                #  restore program size register
+    lw      s10, 8(t0)               #  restore BIOS status register
+    lw      s11, 12(t0)              #  restore program offset register
+
+    la      s1, UART_STATUS          #  reinitialize UART status pointer
+    la      sp, bios_stack_top       #  re-heal BIOS stack
+    call    sync_bios_telemetry      #  push the restored telemetry enable setting out to hardware
+
+    li      t2, REG_DUMP_BUF         #  send pointer; t6 can't be reused here since the tx/rx macros clobber it as their own link register on every call
+    li      a0, FB_REG_DISP          #  opening guard byte
+    tx
+    li      t4, 1                    #  register index counter, x1 first
+1:
+    mv      a0, t4                   #  send the register index byte
+    tx
+    lw      a0, 0(t2)                #  load that register's saved value
+    call    send_word                #  send it as 4 little-endian bytes
+    addi    t2, t2, 4                #  advance buffer pointer
+    addi    t4, t4, 1                #  next register index
+    li      t5, 32                   #  loop until index 32 (i.e. after sending x31)
+    bne     t4, t5, 1b               #  ...
+    li      a0, FB_REG_DISP          #  closing guard byte
+    tx
+
+    j       idle                     #  return to full idle
+
 # HELPERS
 
 # NOTE: push_addr/pop_addr removed, see the developer's note near _start and the rx/tx marco definitions
@@ -1251,7 +1404,7 @@ timeout_handler:    # uses a5 for checking handler type
     li      a0, ERR_BIOS_TIMEOUT        # bios timeout error code
     tx
 2:
-    j       idle
+    j       idle_or_stfail              #  resume whichever idle state is currently appropriate (normal idle, or the limited POST-fail idle if the last self test failed)
 # ^^^ DEVELOPERS NOTE: this current implementation is used as there are no RX/TX FIFOs that allow staging multiple bytes at once
 # said feature will be added in the near future as an upgrade
 
@@ -1260,17 +1413,32 @@ connection_timeout_handler:     # specifically for connection timeout
     tx 
     li      a0, ERR_CONNECTION_TIMEOUT  # error codes
     tx
-    j       idle
+    j       idle_or_stfail              #  resume whichever idle state is currently appropriate (only ever reached via connect's own rx, so this correctly returns to st_fail_idle if that's where connect was called from)
 
 error_handler:
     tx                   # call tx with error type in a0
     mv      a0, a1      # move a1 (error code) to a0 for calling tx agagin
     tx                   # call tx with error code, now in a0
-    j       idle        # jump back to idle state after error handling
+    j       idle_or_stfail        #  jump back to whichever idle state is currently appropriate, instead of always full idle (needed since connect's failure path can be reached from st_fail_idle too)
 
 critical_error:     # generally meant for BIOS-side errors
     li      a0, ERR_CRITICAL    # load 0xEE for ciritcal error transmission to master device
     tx                          
     j       reset
 
+idle_or_stfail:    #  shared return point for code reachable from both the normal idle and the limited POST-fail idle (error_handler, connection_timeout_handler, timeout_handler, connect); resumes whichever is appropriate based on the last self-test outcome
+    li      t0, 0x00020000          # mask for self-test-passed bit; andi can't take an immediate this large
+    and     t0, s10, t0             # self-test-passed bit (17)
+    beqz    t0, st_fail_idle        # last self test failed -> stay in the limited state
+    j       idle                    # otherwise resume full idle as before
+
 st_fail_idle:   # this is a specific limited state of the BIOS if it fails on POST, only functionality is connection
+    li      sp, RAM_TOP             # heal stack each time this limited idle state is (re)entered, mirroring normal idle
+    li      a6, BIOSST_STFIDL       # update BIOS state to the limited POST-fail idle state
+    call    update_state            # push state update to host
+1:
+    addi    a7, x0, 1               #  suppress timeout error while waiting, same as normal idle
+    rx                              #  wait for a command byte
+    li      t1, TB_NET_SYN          #  only a connection attempt is serviced in this state
+    beq     a0, t1, connect         #  hand off to the normal connect routine
+    j       1b                      #  ignore any other byte and keep waiting

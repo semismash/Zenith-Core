@@ -12,6 +12,7 @@
 .equ TB_META_RESET,  0x73   # instant reset
     .equ META_ARG_OFF,  0x00
     .equ META_ARG_ON,   0x01
+.equ TB_META_DISP,   0x7D   # telemetry status display request (status command)
 # MEMORY
 .equ TB_MEM_DUMP,    0x8A
 # CONNECTION
@@ -57,6 +58,8 @@
     .equ META_PARAM_STLCNT,  0x02
     .equ META_PARAM_LSECNT,  0x03
     .equ META_PARAM_BRFCNT,  0x04
+.equ FB_META_DISP,   0x7D   # telemetry status display guard byte
+.equ FB_REG_DISP,    0x75   # GPR dump guard byte (sent before x1 and after x31)
 .equ FB_META_FNSH,   0x7F
 # MEMORY
 .equ FB_MEM_DUMP,    0x8A
@@ -96,6 +99,7 @@
     .equ BIOSST_DD,      0x0D
     .equ BIOSST_ERR,     0x0E
     .equ BIOSST_LOG_ST,  0x0F
+    .equ BIOSST_STFIDL,  0x50  # limited POST-fail idle state (connection only)
 
 # BIOS ERRORS (INTERNAL AND EXTERNAL)
 .equ ERR_MESSAGE,        0xE3
