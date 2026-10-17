@@ -99,5 +99,13 @@ namespace commands {
     struct CommandHelp {};
     struct CommandAbout {};
     struct CommandGitHub {};
+
+    using Command = std::variant<
+        CommandScan, CommandConnect, CommandLoad, CommandRun, 
+        CommandVerify, CommandTelemetry, CommandMonitor, CommandLog, 
+        CommandEcho, CommandDeviceInfo, CommandUpdateInfo, CommandSendByte, 
+        CommandSendByteList, CommandTelemetryStatus, CommandSelfTest, CommandHexDump, 
+        CommandHelp, CommandAbout, CommandGitHub
+    >;
     
 }

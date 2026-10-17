@@ -438,11 +438,11 @@ Options to be able to be configured:
 - Omitting the bytes flag will list the bytes serially left to be transmitted from a previous usage of the command.
 - The `--interval` flag specifies the intervals between the byte transmissions in terms of 10 baud ticks (for example, an interval of 3 would mean one byte transmission every 30 baud ticks).
 
-### `status -r [-t | --telemetry=[instr, cpi, stall, stallpcnt, loaduse, brflush]]`
+### `status -r [-t | --telemetry=[instr, stall, stallpcnt, loaduse, brflush]]`
 - Gets status about the CPU and its recorded data.
-- The `-r` flag gives the stored register data about the CPU. The BIOS has no request byte for this, the GPRs are only sent once after a program completes when it was loaded with `--register=true` (see Register Display).
+- *(NOTE: REMOVED FOR THE CURRENT VERSION SO IGNORE)* The `-r` flag gives the stored register data about the CPU. The BIOS has no request byte for this, the GPRs are only sent once after a program completes when it was loaded with `--register=true` (see Register Display).
 - The `-t` flag gives the currently stored telemetry data of the CPU (request byte `0x7D`). Alternatively, the `--telemetry` flag can be used to fetch specified metrics about CPI.
-- **NOTE:** `cpi` and `stallpcnt` are derived values computed client-side by the CLI from the raw telemetry metrics reported by the BIOS — they are not raw BIOS telemetry codes themselves.
+- **NOTE:** `cpi` and `stallpcnt` are derived values computed client-side by the CLI from the raw telemetry metrics reported by the BIOS — they are not raw BIOS telemetry codes themselves. `cpi` is to be implemented in a later version when `cycles` is implemented.
 - **NOTE (TBD):** The BIOS does not currently send the clock cycle count, so `cycles` (and anything derived from it) can't be filled from BIOS data yet.
 
 ### `selftest`

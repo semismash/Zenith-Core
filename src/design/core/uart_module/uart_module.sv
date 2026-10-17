@@ -13,6 +13,7 @@ module uart_module #(
     output  logic tx_busy,
     // rx
     input   logic rx,
+    input   logic rx_ack,
     output  logic [7:0] rx_data,
     output  logic rx_valid
 );
@@ -54,6 +55,7 @@ module uart_module #(
         .baud_tick        (baud_tick),
         // input receiver
         .rx               (rx),
+        .rx_ack           (rx_ack),
         // data and validity output
         .rx_data          (rx_data),
         .rx_valid         (rx_valid)

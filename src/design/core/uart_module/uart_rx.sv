@@ -9,6 +9,7 @@ module uart_rx #(
     input logic         baud_tick,
     // input receiver
     input logic         rx,
+    input logic         rx_ack,     // pulses for 1 cycle, so rx_valid knows byte was taken
     // data and validity output
     output logic [7:0]  rx_data,
     output logic        rx_valid
@@ -46,12 +47,16 @@ module uart_rx #(
             data_cntr    <= 3'd0;
             rx_valid     <= 1'b0;
         end else begin
+            // rx_valid only now clears on explicit ack signal (allowing bytes to be successfully claimed on non-sycnhronized reads)
+            if (rx_ack)
+                rx_valid <= 1'b0;
+
             unique case (cur_state)
                 default: begin //covers IDLE
-                    rx_valid <= 1'b0;
                     if (rx_sync == 1'b0) begin
                         cur_state    <= START;
                         tick_counter <= '0;
+                        rx_valid     <= 1'b0;  // new byte incoming -> any previous unread byte is now stale, then drop it
                     end
                 end
                 START: begin

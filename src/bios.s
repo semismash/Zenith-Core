@@ -1229,7 +1229,7 @@ uart_rx:    # in: a4 = custom timeout (0 = default), a7 = 1 to suppress the time
     andi    t0, t0, 0x01    # mask only bit 1 (RX VALID)
     beqz    t0, 1b          # loop back while uart status is 0 (not yet valid)
     lbu     a0, 4(s1)       # load data byte once status is nonzero (valid byte ready)
-    li      a4, 0            # clear a4 to default value again, a4 must be explicitly set when its to be called
+    li      a4, 0           # clear a4 to default value again, a4 must be explicitly set when its to be called
     li      a5, 0
     jr      t6 
 
