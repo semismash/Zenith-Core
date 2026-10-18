@@ -196,8 +196,9 @@ module mmio_interface (
     logic rx_read_hit;
     always_comb begin
         rx_read_hit = !write_enable && mem_req_start &&
-                      (mem_addr_0 == UART_RX_DATA || mem_addr_1 == UART_RX_DATA ||
-                       mem_addr_2 == UART_RX_DATA || mem_addr_3 == UART_RX_DATA);
+                      (mem_addr_0 == UART_RX_DATA ||                                                        // lanes beyond the access width are not read, so they must not ack
+                       ((req_bytes == TWO || req_bytes == FOUR) && mem_addr_1 == UART_RX_DATA) ||
+                       (req_bytes == FOUR && (mem_addr_2 == UART_RX_DATA || mem_addr_3 == UART_RX_DATA)));
     end
 
     // ----- ADD OUTPUT (WRITE PORTS) HERE -----
@@ -206,10 +207,12 @@ module mmio_interface (
     logic tx_write_hit;
     Byte tx_write_byte;
     Byte meta_control_byte;
+    logic meta_write_hit;   // set only when this write targets META_CONTROL
     always_comb begin
         tx_write_hit  = 1'b0;
         tx_write_byte = 8'h00;
         meta_control_byte = 8'h00;
+        meta_write_hit    = 1'b0;
 
         if (mem_addr_0 == UART_TX_DATA) begin
             tx_write_hit  = 1'b1;
@@ -227,12 +230,16 @@ module mmio_interface (
 
         if (mem_addr_0 == META_CONTROL) begin
             meta_control_byte = mem_data_write_0;
-        end else if (mem_addr_1 == META_CONTROL) begin
+            meta_write_hit    = 1'b1;
+        end else if (mem_addr_1 == META_CONTROL && (req_bytes == TWO || req_bytes == FOUR)) begin  // only lanes inside the access width count
             meta_control_byte = mem_data_write_1;
-        end else if (mem_addr_2 == META_CONTROL) begin
+            meta_write_hit    = 1'b1;
+        end else if (mem_addr_2 == META_CONTROL && req_bytes == FOUR) begin
             meta_control_byte = mem_data_write_2;
-        end else if (mem_addr_3 == META_CONTROL) begin
+            meta_write_hit    = 1'b1;
+        end else if (mem_addr_3 == META_CONTROL && req_bytes == FOUR) begin
             meta_control_byte = mem_data_write_3;
+            meta_write_hit    = 1'b1;
         end
     end
 
@@ -248,7 +255,8 @@ module mmio_interface (
 
             // initialization
             uart_tx_start   <= 1'b0;
-            p_meta_control  <= '0;
+            
+            p_meta_control[0] <= 1'b0;            // only the clear bit self-clears (one-cycle pulse), meta_enable (bit 1) is held
             mmio_data_ready <= mem_req_start;     // set high when mem access data ready, LSU installs
             uart_rx_ack     <= rx_read_hit;       // pulse ack one cycle after seeing what triggered it
 
@@ -258,7 +266,8 @@ module mmio_interface (
                         p_uart_tx_data <= tx_write_byte;
                         uart_tx_start  <= 1'b1;
                     end
-                    p_meta_control <= meta_control_byte;
+                    if (meta_write_hit)                         // was unconditional: any MMIO write (e.g. a UART TX byte) zeroed META_CONTROL
+                        p_meta_control <= meta_control_byte;    // (moved under the if)
                 end
                 mmio_data_out <= '0;
                 // writes to invalid ports are discarded

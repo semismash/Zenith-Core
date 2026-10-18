@@ -31,7 +31,7 @@ module uart_tx #(
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             tick_cntr <= '0;
-        end else if (cur_state == IDLE && !start_pending) begin
+        end else if (cur_state == IDLE) begin
             tick_cntr <= '0;   // stay reset while nothing is happening
         end else if (baud_tick) begin
             tick_cntr <= bit_done ? '0 : tick_cntr + 1'b1;
@@ -61,7 +61,7 @@ module uart_tx #(
                 end
                 START: begin
                     tx <= 1'b0; // maintain to 0
-                    if (baud_tick) begin    // one full period elapsed
+                    if (bit_done) begin    // advance once per full bit (SAMPLING_RATE ticks)
                         cur_state <= DATA;
                         data_cntr <= 3'd0;
                         tx <= data_reg[0];  // start with LSB
@@ -69,19 +69,20 @@ module uart_tx #(
                 end
                 DATA: begin
                     tx <= data_reg[0];  // always shift LSB of register out, reg gets shifted downwards anyways
-                    if (baud_tick) begin
+                    if (bit_done) begin
                         if (data_cntr == 3'd7) begin
                             cur_state <= STOP;
                             tx <= 1'b1; // drive high for STOP bit
                         end else begin
-                            data_reg <= {1'b0, data_reg[6:0]};
+                            data_reg <= {1'b0, data_reg[7:1]};
+                            tx <= data_reg[1];
                             data_cntr <= data_cntr + 1'b1;
                         end
                     end
                 end
                 STOP: begin
                     tx <= 1'b1; // hold high for stop
-                    if (baud_tick) begin
+                    if (bit_done) begin     // full stop bit (was one oversample tick)
                         cur_state <= IDLE;  // reset to idle
                     end
                 end

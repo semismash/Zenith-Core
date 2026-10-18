@@ -56,7 +56,6 @@ module uart_rx #(
                     if (rx_sync == 1'b0) begin
                         cur_state    <= START;
                         tick_counter <= '0;
-                        rx_valid     <= 1'b0;  // new byte incoming -> any previous unread byte is now stale, then drop it
                     end
                 end
                 START: begin
@@ -65,6 +64,7 @@ module uart_rx #(
                             if (rx_sync == 1'b0) begin
                                 cur_state <= DATA;
                                 data_cntr <= '0;
+                                rx_valid  <= 1'b0;
                             end else begin
                                 cur_state <= IDLE;
                             end
