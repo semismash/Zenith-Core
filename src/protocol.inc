@@ -121,8 +121,11 @@
     .equ ERR_PRG_PARAM_INVALID,     0x02
     .equ ERR_PRG_ARG_INVALID,       0x03
     .equ ERR_PRG_TOO_BIG,           0x04
+    .equ ERR_PRG_OFST_UNALIGN,      0x05
+    .equ ERR_PRG_SIZE_UNALIGN,      0x06
 .equ ERR_DEVICE_DATA,    0xED
 .equ ERR_CRITICAL,       0xEE   
 .equ ERR_BIOS,           0xEF
     .equ ERR_BIOS_TIMEOUT,          0x01
     .equ ERR_BIOS_ARG_INVALID,      0x02
+    .equ ERR_BIOS_INV_CMD,          0x03

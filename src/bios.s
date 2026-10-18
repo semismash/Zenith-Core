@@ -1,15 +1,18 @@
 # BIOS specific constant declarations
-.equ DEFAULT_TIMEOUT_CYCLE, 0x4000000                   # 67 million cycle safety window (6.7s at 10MHz)
+.equ CPU_CLOCK_HZ,      10000000                    # core clock, the timeouts and the H3 cooldown are derived from it (same value as dd_clk)
+.equ UART_BAUD_RATE,    9600                        # UART baud rate, used to size the cooldown window in byte-times (same value as dd_baud)
+.equ UART_POLL_CYCLES,  10                          # PLACEHOLDER (review later): clock cycles one pass of the uart_rx wait loop takes; measure in sim and adjust
+.equ DEFAULT_TIMEOUT_CYCLE, (0x4000000 / UART_POLL_CYCLES) # uart_rx counts loop passes, not cycles, so divide the cycle budget by cycles-per-pass # 67 million cycle safety window (6.7s at 10MHz)
 .equ UART_STATUS,       0x80000000                  # 0x8000_0000
 .equ UART_RXD_OFFSET,   0x4                         # 0x8000_0004
 .equ UART_TXD_OFFSET,   0x8                         # 0x8000_0008
-.equ PROGRAM_START,     0x1000                      # program entry point
+.equ PROGRAM_START,     0x2000                      # RAM/program space now starts after the 8 KiB ROM # program entry point
 .equ RAM_SIZE,          0x20000                     # 128 KiB RAM (matches size of RAM)
-.equ PROGRAM_TOP,       0x20000                     # program top address, everything above that is reserved by BIOS
-.equ RAM_TOP,           PROGRAM_START + RAM_SIZE    # PROGRAM_START + RAM_SIZE, top of stack grows down from here, (0x21000)
+.equ PROGRAM_TOP,       0x21000                     # changed to 0x20000 # program top address, everything above that is reserved by BIOS
+.equ RAM_TOP,           PROGRAM_START + RAM_SIZE    # 0x22000 # PROGRAM_START + RAM_SIZE, top of stack grows down from here, (0x21000)
 
 .equ ROM_START,         0x0
-.equ ROM_SIZE,          0x1000
+.equ ROM_SIZE,          0x2000                      # 8 KiB ROM (was 0x1000)
 
 # Telemetry
 .equ ADDR_META_CONTROL,     0x80001000
@@ -20,13 +23,18 @@
 .equ ADDR_META_BR_FLUSH,    0x80001010
 
 .equ BIOS_STACK_SIZE,   64                          # 64 bytes allocated for BIOS
-.equ CONNECTION_TIMEOUT_CYCLES, 0x8F00000           # connection_timeout form
-.equ MSG_ECHO_BUF,      0x20800                     # dedicated 256-byte destination buffer for msg_echo's gets() call, separate from the PROGRAM_TOP+0x0-0xF register-save scratch
-.equ REG_DUMP_BUF,      0x20900                     # 124-byte (31 word) scratch buffer for jump_back_reg_disp's x1-x31 dump, placed right after MSG_ECHO_BUF
+.equ CONNECTION_TIMEOUT_CYCLES, (0x8F00000 / UART_POLL_CYCLES) # connection_timeout form
+.equ MSG_ECHO_BUF,      0x21800                     # was 0x20800 # dedicated 256-byte destination buffer for msg_echo's gets() call, separate from the PROGRAM_TOP+0x0-0xF register-save scratch
+.equ REG_DUMP_BUF,      0x21900                     # was 0x20900 # 124-byte (31 word) scratch buffer for jump_back_reg_disp's x1-x31 dump, placed right after MSG_ECHO_BUF
+.equ MSG_ECHO_BUF_SIZE, 256                         # size of MSG_ECHO_BUF, gets() rejects anything longer
+.equ DRAIN_QUIET_BYTES, 5                           # cooldown after an error: RX must stay quiet this many byte-times
+.equ DRAIN_QUIET_ITER,  ((DRAIN_QUIET_BYTES * 10 * (CPU_CLOCK_HZ / UART_BAUD_RATE)) / UART_POLL_CYCLES) # same window in loop passes (10 bits per byte)
+.equ PRG_TAIL_BYTES,    8                           # every loaded program gets a 2-word lui+jalr jump-back tail
+.equ PRG_VALID_BIT,     0x00002000                  # Ns10 bit 13: valid program load
 
 .include "protocol.inc"     # <---- all da protocol codez in here :3
 
-# <-------- DISCLAIMER: This code is human written. Some parts of the code were debugged using AI. All debugged code was thoroughly human reviewed. ---------->
+# <-------- DISCLAIMER: Most of this code is human written. However, certain final-stage parts of the code were written and debugged using AI. All debugged code was thoroughly human reviewed. ---------->
 
 # REGISTER USAGE:
 # a0 - callee return value 1
@@ -41,6 +49,7 @@
 # s0-s11 - global/high-lifetime variables
     # s1 - UART status (RX_DATA/TX_DATA are now addressed as fixed offsets from this, see uart_rx/uart_tx)
     # NOTE: s2 and s3 removed - previously used for rx and tx functions but no longer required
+    # s2 / s3 - program_load candidate offset / size, only copied into s11 / s9 once a load fully completes
     # s9 - Loaded Program Size
     # s10 - BIOS Status Register
         # [7:0]: BIOS Status Byte
@@ -49,6 +58,7 @@
         # [10]: BIOS Telemetry Enable
         # [11]: Program Telemetry Enable
         # [12]: Program Telemetry Reset
+        # [13]: Valid Program Load (set only by a fully completed program_load; cleared on reset, at the start of a load's data phase, and by a self test)
         # vvv These bits are not automatically reset upon forced reset
         # [16]: Prior Connection (first time connecting, or has been connected before)
         # [17]: Self Test Passed
@@ -56,7 +66,7 @@
     # s11 - Program Start Offset
 
 # MEMORY LAYOUT:
-# 0x00000000 - 0x00000FFF: BIOS ROM
+# 8 KiB ROM # 0x00000000 - 0x00000FFF: BIOS ROM
 # 0x00001000 - 0x0001FFFF: PROGRAM SPACE (PROGRAM STACK DEFAULT: 0x00020000)
 # 0x00020000 - 0x00020FBF: BIOS DATA SPACE
 # 0x00020FC0 - 0x00021000: BIOS STACK (allocate 64 bytes (16 words) space for BIOS stack)
@@ -107,21 +117,21 @@ bios_start_msg:
     .align  2       # make sure to align correctly to 2 byte boundaries so program_start can utilize it correctly
 
 # Memory Layouts
-program_start:      # 0x1000
+program_start:      # 0x2000
     .word   PROGRAM_START
 ram_size:           # 0x20000
     .word   RAM_SIZE
-ram_top:            # 0x21000
+ram_top:            # 0x22000
     .word   RAM_TOP
-program_top:        # 0x20000
+program_top:        # 0x21000
     .word   PROGRAM_TOP
 program_size:
     .word   PROGRAM_TOP - PROGRAM_START
-bios_stack_top:     # 0x21000
+bios_stack_top:     # 0x22000
     .word   RAM_TOP
-program_stack_top:  # 0x20000
+program_stack_top:  # 0x21000
     .word   PROGRAM_TOP
-bios_data_top:      # 0x20FC0
+bios_data_top:      # 0x21FC0
     .word   RAM_TOP - BIOS_STACK_SIZE
 bios_mem_size:
     .word   RAM_TOP - BIOS_STACK_SIZE - PROGRAM_TOP
@@ -361,41 +371,41 @@ selftest_ctrl_pass:
 selftest_ctrl_fail:
 
 # TEST 4: MEMORY
-# addresses spanning program space: 0x1000, 0x8000, 0x10000, 0x1FFFC (word-aligned top)
+# PROGRAM_START, +0x7000, +0xF000 and PROGRAM_TOP - 4, derived from the constants # addresses spanning program space: 0x1000, 0x8000, 0x10000, 0x1FFFC (word-aligned top)
 selftest_mem:
-    li      t0, 0x1000
+    li      t0, PROGRAM_START
     li      t1, 0xA1A1A1A1
     sw      t1, 0(t0)
     lw      t2, 0(t0)
     bne     t1, t2, selftest_mem_fail
 
-    li      t0, 0x8000
+    li      t0, PROGRAM_START + 0x7000
     li      t1, 0xB2B2B2B2
     sw      t1, 0(t0)
     lw      t2, 0(t0)
     bne     t1, t2, selftest_mem_fail
 
-    li      t0, 0x10000
+    li      t0, PROGRAM_START + 0xF000
     li      t1, 0xC3C3C3C3
     sw      t1, 0(t0)
     lw      t2, 0(t0)
     bne     t1, t2, selftest_mem_fail
 
-    li      t0, 0x1FFFC
+    li      t0, PROGRAM_TOP - 4    # last word of program space
     li      t1, 0xD4D4D4D4
     sw      t1, 0(t0)
     lw      t2, 0(t0)
     bne     t1, t2, selftest_mem_fail
 
     # byte access
-    li      t0, 0x1000
+    li      t0, PROGRAM_START
     li      t1, 0x5A
     sb      t1, 0(t0)
     lb      t2, 0(t0)
     bne     t1, t2, selftest_mem_fail
 
     # halfword access
-    li      t0, 0x1004
+    li      t0, PROGRAM_START + 4
     li      t1, 0x1234
     sh      t1, 0(t0)
     lh      t2, 0(t0)
@@ -491,7 +501,7 @@ reset:
     and     s10, s10, t1                
     addi    s11, x0, 0              # s11 - Program offset register
 
-    la      sp, bios_stack_top      # initialize stack
+    li      sp, RAM_TOP             # la loaded the ADDRESS of the bios_stack_top word, not its value # initialize stack
     addi    a4, x0, 0               # clear a4 register to prevent interference with UART rx timer (see uart_rx: label below)
 
     li      t0, 0x00020000          # mask for self-test-pass bit (17), andi can't take an immediate this large, build the mask with li + and instead
@@ -503,6 +513,8 @@ update:
 
 idle:
     li      sp, RAM_TOP             # re-heal stack every time BIOS returns to idle
+    li      a4, 0                   # a4/a5 were only cleared after a successful rx; a program returning with e.g. a4 = 1 made the BIOS deaf
+    li      a5, 0                   # default timeout handler
     li      a6, BIOSST_IDLE         
     call    update_state            # update state to idle
 1:
@@ -535,32 +547,34 @@ idle:
     li      t1, TB_BIOS_DATA        # check if BIOS data monitoring is turned on
     beq     t0, t1, bios_log
 
-    j       1b                    # loop around if no valid command bytes, no error 
+    li      a0, ERR_BIOS            # unknown command byte -> EF 03
+    li      a1, ERR_BIOS_INV_CMD
+    j       error_handler
 
 # BIOS UTILITY
 
 msg_echo:
     li      a6, BIOSST_MSG
-    call    update_state    # update state  
+    call    update_state        # update state  
     
-    li      a1, MSG_ECHO_BUF # destination buffer address to store string
-    call    gets            # get input string of byte size a long with size
+    li      a1, MSG_ECHO_BUF    # destination buffer address to store string
+    call    gets                # get input string of byte size a long with size
     mv      s7, a0          
 
-    li      a0, FB_MSG_ECHO # send transmission byte starting message display attempt
+    li      a0, FB_MSG_ECHO     # send transmission byte starting message display attempt
     tx 
 
     mv      a0, s7
-    call    puts            # print string via uart using puts
+    call    puts                # print string via uart using puts
 
     li      a0, FB_MSG_FLSH
-    tx                       # transmit flush message towards the en
+    tx                          # transmit flush message towards the en
     
     j       idle            
 
 req_self_test:
-    li      a6, BIOSST_MSG
-    call    update_state    # update state
+    li      a6, BIOSST_ST       # was BIOSST_MSG (logged 0x03 instead of 0x05)
+    call    update_state        # update state
 
     # move existing BIOS status registers into known BIOS memory locations unaffected by registers
     li      t0, PROGRAM_TOP
@@ -579,27 +593,27 @@ req_self_test_res:
 
     li      s1, UART_STATUS
 
-    li      t0, 0x00FF0000  # update s10 bits 16-23 to the new values of 16-23 (achived from s5 bitmask we stored)
+    li      t0, 0x00FF0000              # update s10 bits 16-23 to the new values of 16-23 (achived from s5 bitmask we stored)
     and     t0, s6, t0      
-    li      t1, 0xFF00FFFF
+    li      t1, 0xFF00DFFF              # clear bit 13, the memory test overwrites program space, so any loaded program is no longer valid
     and     s10, s10, t1
     or      s10, s10, t0
 
-    call    display_self_test_results  # display logic moved into a shared, callable routine (also used by connect for the first reconnect after a self test)
-    j       idle
+    call    display_self_test_results   # display logic moved into a shared, callable routine (also used by connect for the first reconnect after a self test)
+    j       idle_or_stfail              # a failed requested self test now drops into the limited st_fail_idle (pass -> normal idle, M8)
 
-display_self_test_results:   # shared self-test results display (startup banner + pass/fail + per-test results); reads live from s10 bits 16-23 so it's valid for any caller, not just right after st_evaluate
-    fn_enter                       # protect ra, since this calls puts internally
+display_self_test_results:              # shared self-test results display (startup banner + pass/fail + per-test results); reads live from s10 bits 16-23 so it's valid for any caller, not just right after st_evaluate
+    fn_enter                            # protect ra, since this calls puts internally
 
-    la      t0, bios_start_msg_len # load string length into register from memory
+    la      t0, bios_start_msg_len      # load string length into register from memory
     lw      a0, 0(t0)               
-    la      a1, bios_start_msg     # load offset pointer
-    call    puts                   # print the BIOS startup banner
-    li      a0, FB_MSG_FLSH        # explicit flush byte to close the startup message framing
+    la      a1, bios_start_msg          # load offset pointer
+    call    puts                        # print the BIOS startup banner
+    li      a0, FB_MSG_FLSH             # explicit flush byte to close the startup message framing
     tx                              
 
-    li      t0, 0x00020000          # mask for the self-test-passed bit; andi can't take an immediate this large
-    and     t0, s10, t0             # self-test-passed bit (17), read straight from s10 instead of the local st_evaluate bitmask
+    li      t0, 0x00020000              # mask for the self-test-passed bit; andi can't take an immediate this large
+    and     t0, s10, t0                 # self-test-passed bit (17), read straight from s10 instead of the local st_evaluate bitmask
     beqz    t0, 1f
     li      a0, FB_ST_PASS
     tx
@@ -630,13 +644,14 @@ display_self_test_results:   # shared self-test results display (startup banner 
     li      a0, FB_ST_FINISH
     tx
 
-    fn_leave                        # return to caller (req_self_test_res or connect)
+    fn_leave                # return to caller (req_self_test_res or connect)
 
 telemetry:  # while writing this function, one half of me was sleepy and the other half of me was depressed, pls don't judge
     li      a6, BIOSST_META
     call    update_state    # update state
 
     li      t4, 4           # for four possible arguments (bios tele, prog tele, inst telereset, prog telereset)
+    li      t3, 0           # set to 1 once a 0x73 reset is seen, so `7A 73 7A` is not treated as a bare `7A 7A` display request
 1:  
     rx                      # get byte
     li      t0, TB_META_START
@@ -682,6 +697,7 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
     addi    t4, t4, -1      # reduce count per arg
     j       1b
 7:
+    li      t3, 1           # this command contained a parameter (0x73), it is not a display request
     # META_CONTROL is write-only in hardware, so this reads back through the ADDR_META_CONTROL_RD mirror
     # port (temporary fix, see mmio_interface.sv), while still writing to the normal ADDR_META_CONTROL
     # address. Two separate addresses: t0 = write, t1 = read.
@@ -696,6 +712,7 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
     
     j       1b                      # loop back for next argument
 12:
+    bnez    t3, 14f                 # 0x73 was sent: just apply, no settings reply
     addi    t1, t4, -4              # if arguments left was still 4 (immediately guard byte was send, meaning that user requested display of current telemetry settings)
     bnez    t1, 14f
 
@@ -742,6 +759,8 @@ telemetry:  # while writing this function, one half of me was sleepy and the oth
 telemetry_status:    # implements the `status --telemetry` display; replies with each live counter value read straight from its MMIO address
     li      a6, BIOSST_META         # reuse the telemetry display state code
     call    update_state            # update state
+    li      t0, ADDR_META_CONTROL   # freeze the counters (w/ enable=0) so all four values below come from the same instant
+    sb      zero, 0(t0)
 
     li      a0, FB_META_DISP        # opening guard byte
     tx
@@ -772,6 +791,7 @@ telemetry_status:    # implements the `status --telemetry` display; replies with
 
     li      a0, FB_META_DISP        # closing guard byte
     tx
+    call    sync_bios_telemetry     # unfreeze, restore meta_enable from s10 bit 10
     j       idle                    # return to idle
 
 memdump:
@@ -823,7 +843,7 @@ program_load:   # here, the s4 register is used like a temporary status register
     call    update_state        # update state
 
     li      s4, 0               
-    li      s11, PROGRAM_START  # default program start offset into s11 program offset register
+    li      s2, PROGRAM_START   # default program start offset into s11 program offset register; candidate offset in s2; s11 is only updated once the load fully completes 
     li      t4, 6               # 6 possible arguments (run, verify, offset, telemetry mode, telemetry reset, register display)
 1:  
     li      t0, TB_PRG_LOAD     # if arguments loaded... or not (recheck using the same verification byte again)
@@ -855,7 +875,7 @@ program_load:   # here, the s4 register is used like a temporary status register
     mv      s5, t4              # technically not required as get_word never uses t4, probably will remove it later on
     call    get_word
     mv      t4, s5
-    mv      s11, a0             # move program load offset into offset register (s11 is the program offset register, programs are loaded and run here)
+    mv      s2, a0              # move program load offset into offset register (s11 is the program offset register, programs are loaded and run here); candidate offset, committed to s11 at the end
     j       15f
 6:
     li      t1, 2               # bit two (telemetry mode) -> utilizes shifting (see label 12 below)
@@ -888,15 +908,25 @@ program_load:   # here, the s4 register is used like a temporary status register
 2:
     call    get_word            # program get size
     
-    mv      a1, s11             # move offset into a1 as arg
-    mv      s9, a0              # move into s9 program size register first
-    mv      t0, a0              # move to t0 as check_size consumes a0
-    addi    a0, a0, 4           # add 4 (1 word) to a0 for size measurement, need one extra word at the end for a jump instruction back to bios after program execution
-    call    check_size          # check program size
-    beqz    a0, 17f             # size is too big, fail to load program
-
-    mv      t1, s11             # move offset pointer to t11 for use
-    mv      t2, t0              # load program size again (for later use for mem dumps and shi), as t0 gets consumed right after this
+    mv      s3, a0                      # candidate size in s3, committed to s9 at the end
+    li      t0, PROGRAM_START           # dedicated program-space check, all compares unsigned so nothing can wrap
+    bltu    s2, t0, 9f                  # offset below program space -> EC 02
+    li      t0, PROGRAM_TOP             
+    bgeu    s2, t0, 9f                  # offset at/above PROGRAM_TOP -> EC 02
+    andi    t1, s2, 0x3                 
+    bnez    t1, 25f                     # unaligned offset -> EC 05
+    beqz    s3, 9f                      # zero size -> EC 02
+    andi    t1, s3, 0x3                 
+    bnez    t1, 26f                     # unaligned size -> EC 06
+    sub     t1, t0, s2                  # room = PROGRAM_TOP - offset (> 0 here)
+    li      t2, PRG_TAIL_BYTES          
+    bltu    t1, t2, 17f                 # not even room for the 8-byte tail -> EC 04
+    sub     t1, t1, t2                  # room left for the program itself
+    bltu    t1, s3, 17f                 # offset + size + 8 > PROGRAM_TOP -> EC 04 (last tail word at most PROGRAM_TOP - 4)
+    li      t0, ~PRG_VALID_BIT          # memory is about to be overwritten: clear bit 13 until the load completes
+    and     s10, s10, t0                
+    mv      t1, s2                      # Nwrite pointer = candidate offset
+    mv      t0, s3                      # receive count = candidate size
 16:
     rx                          
     sb      a0, 0(t1)           # store byte in memory
@@ -905,35 +935,27 @@ program_load:   # here, the s4 register is used like a temporary status register
     bnez    t0, 16b             # go back if not yet zero
 
     # now, da fun begins >:D (use our s4 status register to apply its settings here)
-    mv      t0, t2              # move size bacak into t0
+    # move size bacak into t0
     srli    t2, s4, 4           # reg display bit
     beqz    t2, 18f
-    la      t2, jump_back_reg_disp 
+    la      t2, tail_regdisp    # copy the tail stub that jumps to jump_back_reg_disp
     j       19f                 # if reg disp turned on, jump back to different address after executing (its in BIOS, for displaying reg values specifically)
 18:
-    la      t2, jump_back       # if reg disp is turned off, then just go back to start of bios as normal
+    la      t2, tail_run        # copy the tail stub that jumps to jump_back # if reg disp is turned off, then just go back to start of bios as normal
     # ^^^ jump_back and jump_back_reg_disp are labels that are to be implemented labels, the latter is supposed to display the contents of all 31 GPRs after program completion
     # after jumping back, the BIOS is supposed the status registers back in correctly and go back to idle state after all is done
 19:
-    sub     t3, t2, t1          #  t3 = byte offset from the jump-back instruction's address (t1) to its target (t2); encoded below as a jal instruction instead of storing a raw address
-    srli    t4, t3, 1           #  imm[10:1] -> instruction bits 21-30
-    andi    t4, t4, 0x3FF       #  keep only those 10 bits
-    slli    t4, t4, 21          #  move into position
-    li      t5, 0x0000006F      #  base encoding for `jal x0, <offset>` (opcode 1101111, rd = x0)
-    or      t5, t5, t4          #  merge imm[10:1]
-    srli    t4, t3, 11          #  imm[11] -> instruction bit 20
-    andi    t4, t4, 0x1
-    slli    t4, t4, 20
-    or      t5, t5, t4          #  merge imm[11]
-    srli    t4, t3, 12          #  imm[19:12]; andi can't take a mask this large, so shift-mask-shift instead of masking in place
-    andi    t4, t4, 0xFF        #  keep only those 8 bits
-    slli    t4, t4, 12          #  imm[19:12] sits at the same bit position in both the offset and the instruction
-    or      t5, t5, t4          #  merge imm[19:12]
-    srli    t4, t3, 20          #  imm[20] (sign bit) -> instruction bit 31
-    andi    t4, t4, 0x1
-    slli    t4, t4, 31
-    or      t5, t5, t4          #  merge imm[20]
-    sw      t5, 0(t1)           # finish loading program finally <- REVIEW THIS   #  now stores an encoded jal instruction instead of a raw address, resolving the review note (jump range is always well within jal's +/-1MiB limit here)
+    # removed the 18-line runtime `jal` encoder (sub t3, t2, t1 ... or t5, t5, t4) and `sw t5, 0(t1)`; replaced by copying a pre-assembled lui+jalr stub
+    lw      t3, 0(t2)                   # stub word 1: lui t6, %hi(target)  (reads ROM as data)
+    lw      t4, 4(t2)                   # stub word 2: jalr zero, %lo(target)(t6)
+    sw      t3, 0(t1)                   # t1 = offset + size: right after the last program byte (word aligned, M6)
+    sw      t4, 4(t1)
+    mv      s11, s2                     # commit offset only now that the program and its tail are in place
+    mv      s9, s3                      # commit size
+    li      t3, PRG_VALID_BIT 
+    or      s10, s10, t3                # set bit 13: valid program load
+    li      a0, FB_PRG_LOAD             # load-complete byte (0xCA), sent before any verify read-back
+    tx
 
     srli    t2, s4, 2           # program telemetry enable bit
     andi    t2, t2, 0x01        # mask out bit
@@ -987,10 +1009,21 @@ program_load:   # here, the s4 register is used like a temporary status register
     li      a0, ERR_PROGRAM
     li      a1, ERR_PRG_TOO_BIG
     j       error_handler
+25:
+    li      a0, ERR_PROGRAM
+    li      a1, ERR_PRG_OFST_UNALIGN
+    j       error_handler
+26:
+    li      a0, ERR_PROGRAM
+    li      a1, ERR_PRG_SIZE_UNALIGN
+    j       error_handler
 
 program_verify:
     li      a6, BIOSST_MEM
     call    update_state    # update state
+    li      t0, PRG_VALID_BIT
+    and     t0, s10, t0
+    beqz    t0, program_unverified      # no fully loaded program; avoids a size-0 dump
 
     mv      a0, s9          # move size back from s9 into a0 as argument
     mv      a1, s11         # move offset from s11 back into a1
@@ -1104,6 +1137,9 @@ bios_log:
 program_run:
     li      a6, BIOSST_PGEX
     call    update_state    # update state
+    li      t0, PRG_VALID_BIT
+    and     t0, s10, t0
+    beqz    t0, program_unverified      # nothing (or only part of a program) loaded -> EC 01
 
     # load status registers into BIOS memoryduring program execution, so they can be retreived back after jump back
     # WARNING: since there is no memory segmentation, the program instructions can directly overwrite BIOS allocated memory, and there are no inbuilt protection guards against it
@@ -1135,8 +1171,13 @@ program_run:
     sb      t3, 0(t2)       # deassert reset bit
 
 3:
-    li      sp, PROGRAM_TOP # set up stack pointer at top of the program space (0x20000)
-    jr      s11             # jump to program start offset
+    li      sp, PROGRAM_TOP             # now 0x21000 # set up stack pointer at top of the program space (0x20000)
+    add     ra, s11, s9                 # ra = the tail's lui, so a program ending in `ret` also returns to the BIOS
+    jr      s11                         # jump to program start offset
+program_unverified:                     # shared by program_run and program_verify
+    li      a0, ERR_PROGRAM 
+    li      a1, ERR_PRG_UNVERIFIED
+    j       error_handler
 
 # <---------- NOTE: The below two functions were initially written with the help of AI, but were thoroughly reviewed a human. ---------->
 jump_back:    #  default post-execution return target (no register display); restores BIOS's own s9/s10/s11, reinitializes s1 and sp, then returns to idle
@@ -1146,7 +1187,7 @@ jump_back:    #  default post-execution return target (no register display); res
     lw      s11, 12(t0)              #  restore program offset register
 
     la      s1, UART_STATUS          #  reinitialize UART status pointer (the program may have repurposed s1 for its own use)
-    la      sp, bios_stack_top       #  re-heal BIOS stack
+    li      sp, RAM_TOP              #  re-heal BIOS stack
     call    sync_bios_telemetry      #  push the restored (BIOS-side) telemetry enable setting out to hardware now that the program has ended, instead of leaving the program's setting active
 
     j       idle                     #  return to full idle (program execution is only ever reachable once a self test has passed, so plain idle is correct here)
@@ -1191,7 +1232,7 @@ jump_back_reg_disp:    #  post-execution return target when register display was
     lw      s11, 12(t0)              #  restore program offset register
 
     la      s1, UART_STATUS          #  reinitialize UART status pointer
-    la      sp, bios_stack_top       #  re-heal BIOS stack
+    li      sp, RAM_TOP              #  load the value, not the address of the rodata word #  re-heal BIOS stack
     call    sync_bios_telemetry      #  push the restored telemetry enable setting out to hardware
 
     li      t2, REG_DUMP_BUF         #  send pointer; t6 can't be reused here since the tx/rx macros clobber it as their own link register on every call
@@ -1212,6 +1253,21 @@ jump_back_reg_disp:    #  post-execution return target when register display was
 
     j       idle                     #  return to full idle
 
+# <<<----- Code snippet below added after human suggested review and feature, made and optimized using AI, never knew this syntax to begin with lmao----->>>
+# jump-back tail templates: program_load copies one of these 2-word pairs right after every loaded program.
+# they are never executed from here. norelax keeps the linker from shrinking/removing the lui (which would break the 2-word copy).
+# t6 is used because the register dump already reports x31 as 0 (it is the dump's base pointer).
+    .option push
+    .option norelax
+    .balign 4
+tail_run:
+    lui     t6, %hi(jump_back)
+    jalr    zero, %lo(jump_back)(t6)
+tail_regdisp:
+    lui     t6, %hi(jump_back_reg_disp)
+    jalr    zero, %lo(jump_back_reg_disp)(t6)
+    .option pop
+
 # HELPERS
 
 # NOTE: push_addr/pop_addr removed, see the developer's note near _start and the rx/tx marco definitions
@@ -1223,11 +1279,11 @@ uart_rx:    # in: a4 = custom timeout (0 = default), a7 = 1 to suppress the time
     beqz    a4, 1f          # a4 is custom timeout parameter, if its already zeroed out, then use default (jump to 1 directly)
     mv      t5, a4
 1:
-    lbu     t0, 0(s1)       # load UART status byte
+    lbu     a0, 0(s1)       # load UART status byte
     addi    t5, t5, -1      # decrement timeout checker
     beqz    t5, timeout_handler
-    andi    t0, t0, 0x01    # mask only bit 1 (RX VALID)
-    beqz    t0, 1b          # loop back while uart status is 0 (not yet valid)
+    andi    a0, a0, 0x01    # mask only bit 1 (RX VALID)
+    beqz    a0, 1b          # loop back while uart status is 0 (not yet valid)
     lbu     a0, 4(s1)       # load data byte once status is nonzero (valid byte ready)
     li      a4, 0           # clear a4 to default value again, a4 must be explicitly set when its to be called
     li      a5, 0
@@ -1243,7 +1299,7 @@ uart_tx:    # NOTE: no need for safety checker here, as its BIOS side, cannot ti
 
 # BIOS Functions
 
-send_word:  # sent in little endian order, return the original word too
+send_word: # sent in little endian order, return the original word too
     li      t0, 4           # 4 bytes per word
     mv      t1, a0          # temporarily store original word
 1:  
@@ -1287,10 +1343,12 @@ update_state:
 
 mem_print:
     fn_enter                
-    mv      t0, a0          # size
-    mv      t1, a1          # offset
+    mv      t2, a0          # keep the size in t2, check_size clobbers t0/t1 # size
+
     call    check_size
     beqz    a0, 2f          # if size overflow
+    mv      t0, t2          # size
+    mv      t1, a1          # offset (as a1 is untouched by check_size)
 1:  
     lbu     a0, 0(t1)       # load byte from memory
     tx                      # send via uart tx
@@ -1312,6 +1370,8 @@ gets:
 
     call    get_word
     mv      s4, a0          # string size, move into s4 temporarily to survive check_size
+    li      t0, MSG_ECHO_BUF_SIZE
+    bltu    t0, a0, 2f      # longer than the 256-byte echo buffer -> E3 01
     call    check_size
     beqz    a0, 2f          # if message size too high, respective error  
     mv      t1, s4          # move size into t1
@@ -1367,9 +1427,12 @@ puts:
 
 check_size:
     li      t0, RAM_TOP - BIOS_STACK_SIZE   # top address for BIOS data (end of stack)
+    bgeu    a1, t0, 1f                      # unsigned: offset at/above the top (also catches huge 'negative' offsets)
+    beqz    a0, 1f                          # zero size is never valid
     sub     t1, t0, a1                      # subtract offset pointer address from top address to get remaining size
-    bltz    t1, 1f                          # ensure that pointer is not greater than max allowed address
-    slt     a0, a0, t1                      # (compare addresses) if message size too high, return result as 0 (fail), else return as 1
+
+    sltu    a0, t1, a0                      # (compare addresses) if message size too high, return result as 0 (fail), else return as 1
+    xori    a0, a0, 1                       # 1 = fits; size == remaining (i.e. ends exactly at 0x21FBF) is now allowed
 2:
     ret                                 
 1:
@@ -1404,8 +1467,9 @@ timeout_handler:    # uses a5 for checking handler type
     tx
     li      a0, ERR_BIOS_TIMEOUT        # bios timeout error code
     tx
+    j       rx_cooldown                 # mid-command timeout (allows byte drain and gives host time to adjust accordingly, safety mechanic)
 2:
-    j       idle_or_stfail              #  resume whichever idle state is currently appropriate (normal idle, or the limited POST-fail idle if the last self test failed)
+    j       idle_or_stfail              # resume whichever idle state is currently appropriate (normal idle, or the limited POST-fail idle if the last self test failed)
 # ^^^ DEVELOPERS NOTE: this current implementation is used as there are no RX/TX FIFOs that allow staging multiple bytes at once
 # said feature will be added in the near future as an upgrade
 
@@ -1414,18 +1478,39 @@ connection_timeout_handler:     # specifically for connection timeout
     tx 
     li      a0, ERR_CONNECTION_TIMEOUT  # error codes
     tx
-    j       idle_or_stfail              #  resume whichever idle state is currently appropriate (only ever reached via connect's own rx, so this correctly returns to st_fail_idle if that's where connect was called from)
+    li      t0, 0xFFFFFEFF
+    and     s10, s10, t0                # ACK timed out: clear the connection bit, like the invalid-ACK path
+    j       rx_cooldown                 # cooldown, then rx_cooldown resumes the right idle state #  resume whichever idle state is currently appropriate (only ever reached via connect's own rx, so this correctly returns to st_fail_idle if that's where connect was called from)
 
 error_handler:
-    tx                   # call tx with error type in a0
-    mv      a0, a1      # move a1 (error code) to a0 for calling tx agagin
-    tx                   # call tx with error code, now in a0
-    j       idle_or_stfail        #  jump back to whichever idle state is currently appropriate, instead of always full idle (needed since connect's failure path can be reached from st_fail_idle too)
+    tx                          # call tx with error type in a0
+    mv      a0, a1              # move a1 (error code) to a0 for calling tx agagin
+    tx                          # call tx with error code, now in a0
+    j       rx_cooldown         # jump back to whichever idle state is currently appropriate, instead of always full idle (needed since connect's failure path can be reached from st_fail_idle too), also drain the stream before idling to prevent unrecognized bytes from interfering and being detected as a command
 
 critical_error:     # generally meant for BIOS-side errors
     li      a0, ERR_CRITICAL    # load 0xEE for ciritcal error transmission to master device
     tx                          
     j       reset
+
+# post-error cooldown -> waits for tx to finish the error bytes, then reads and discards every rx byte until
+# the line has been quiet for DRAIN_QUIET_BYTES byte-times (each received byte restarts the window). Transmits nothing.
+rx_cooldown:
+1:
+    lbu     t5, 0(s1)
+    andi    t5, t5, 0x02                # tx busy
+    bnez    t5, 1b                      # let last error byte leave the wire first
+    li      t5, DRAIN_QUIET_ITER
+2:
+    lbu     t0, 0(s1)
+    andi    t0, t0, 0x01                # rx valid
+    beqz    t0, 3f
+    lbu     t0, 4(s1)                   # read (and so ack) the byte, then drop it
+    li      t5, DRAIN_QUIET_ITER        # a byte arrived: restart the quiet window
+3:
+    addi    t5, t5, -1
+    bnez    t5, 2b
+    j       idle_or_stfail              # quiet long enough
 
 idle_or_stfail:    #  shared return point for code reachable from both the normal idle and the limited POST-fail idle (error_handler, connection_timeout_handler, timeout_handler, connect); resumes whichever is appropriate based on the last self-test outcome
     li      t0, 0x00020000          # mask for self-test-passed bit; andi can't take an immediate this large
@@ -1435,11 +1520,19 @@ idle_or_stfail:    #  shared return point for code reachable from both the norma
 
 st_fail_idle:   # this is a specific limited state of the BIOS if it fails on POST, only functionality is connection
     li      sp, RAM_TOP             # heal stack each time this limited idle state is (re)entered, mirroring normal idle
+    li      a4, 0                   # same reset of the rx timeout parameters as idle
+    li      a5, 0
     li      a6, BIOSST_STFIDL       # update BIOS state to the limited POST-fail idle state
     call    update_state            # push state update to host
 1:
-    addi    a7, x0, 1               #  suppress timeout error while waiting, same as normal idle
-    rx                              #  wait for a command byte
-    li      t1, TB_NET_SYN          #  only a connection attempt is serviced in this state
-    beq     a0, t1, connect         #  hand off to the normal connect routine
-    j       1b                      #  ignore any other byte and keep waiting
+    addi    a7, x0, 1               # suppress timeout error while waiting, same as normal idle
+    rx                              # wait for a command byte
+    addi    a7, x0, 0               # byte received: re-enable timeout errors (connect must report EA 02 on an ACK timeout)
+    li      t1, TB_NET_SYN          # only a connection attempt is serviced in this state
+    beq     a0, t1, connect         # hand off to the normal connect routine
+    li      t1, TB_ST_INIT
+    beq     a0, t1, req_self_test   # re-run the self test from here (debugging); a pass resumes normal idle
+    #  ignore any other byte and keep waiting
+    li      a0, ERR_BIOS            # anything else -> EF 03, then the H3 cooldown back into st_fail_idle
+    li      a1, ERR_BIOS_INV_CMD
+    j       error_handler
