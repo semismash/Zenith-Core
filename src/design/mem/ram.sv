@@ -36,7 +36,7 @@ module ram #(
 
     always_ff @(posedge clk) begin
         // perform boundary check synchronously
-        if (instr_addr >= (RAM_SIZE_BYTES - INST_SIZE_BYTES)) begin
+        if (instr_addr > (RAM_SIZE_BYTES - INST_SIZE_BYTES)) begin
             instr_fault_reg <= 1'b1;
             instr_out       <= '0;
         end else begin
