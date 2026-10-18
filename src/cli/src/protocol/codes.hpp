@@ -127,10 +127,13 @@ inline constexpr uint8_t ERR_PROGRAM = 0xEC;
     inline constexpr uint8_t ERR_PRG_PARAM_INVALID = 0x02;
     inline constexpr uint8_t ERR_PRG_ARG_INVALID = 0x03;
     inline constexpr uint8_t ERR_PRG_TOO_BIG = 0x04;
+    inline constexpr uint8_t ERR_PRG_OFST_UNALIGN = 0x05;
+    inline constexpr uint8_t ERR_PRG_SIZE_UNALIGN = 0x06;
 inline constexpr uint8_t ERR_DEVICE_DATA = 0xED;
 inline constexpr uint8_t ERR_CRITICAL = 0xEE;
 inline constexpr uint8_t ERR_BIOS = 0xEF;
     inline constexpr uint8_t ERR_BIOS_TIMEOUT = 0x01;
     inline constexpr uint8_t ERR_BIOS_ARG_INVALID = 0x02;
+    inline constexpr uint8_t ERR_BIOS_INV_CMD = 0x03;
 
 } // namespace bios_protocol

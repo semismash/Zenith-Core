@@ -22,7 +22,7 @@ from pathlib import Path
 
 # ---- defaults (relative to this script's folder) ----
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_INPUT = SCRIPT_DIR / "../../src/protocol.inc"
+DEFAULT_INPUT = SCRIPT_DIR / "../../firmware/protocol.inc"
 DEFAULT_OUTPUT = SCRIPT_DIR / "../src/protocol/codes.hpp"
 # -----------------------------------------------------
 
