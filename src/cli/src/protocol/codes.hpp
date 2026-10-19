@@ -69,6 +69,7 @@ inline constexpr uint8_t FB_REG_DISP = 0x75;  // GPR dump guard byte (sent befor
 inline constexpr uint8_t FB_META_FNSH = 0x7F;
 // MEMORY
 inline constexpr uint8_t FB_MEM_DUMP = 0x8A;
+inline constexpr uint8_t FB_MEM_CONF = 0x8C;
 // CONNECTION
 inline constexpr uint8_t FB_NET_SYNACK = 0xAB;
 // PROGRAM RUNTIME

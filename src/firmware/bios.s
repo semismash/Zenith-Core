@@ -1347,6 +1347,8 @@ mem_print:
 
     call    check_size
     beqz    a0, 2f          # if size overflow
+    li      a0, FB_MEM_CONF # memdump approved, prefix byte
+    tx                      # send prefix byte
     mv      t0, t2          # size
     mv      t1, a1          # offset (as a1 is untouched by check_size)
 1:  

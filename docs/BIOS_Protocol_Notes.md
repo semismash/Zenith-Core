@@ -83,7 +83,7 @@
   - program plus the 8 byte jump-back tail does not fit between the offset and the top of program space (`0x21000`): `0xEC` + `0x04` (Program Too Big)
 - BIOS inserts a 2 instruction tail (`lui t6` + `jalr`, 8 bytes) right after the last program byte so that, after execution, the program jumps back into the BIOS (to `jump_back`, or `jump_back_reg_disp` if register display was requested) instead of the BIOS start address
 - Once the program and its tail are in place, BIOS sends `0xCA` to tell the host the load is complete.
-- If `0xC1` was given, BIOS then sends `0xCB` followed by the program bytes read back (`size` bytes, without the inserted tail)
+- If `0xC1` was given, BIOS then sends `0xCB`, then `0x8C` (memory read confirmed), followed by the program bytes read back (`size` bytes, without the inserted tail)
 - If `0xC0` was given, BIOS sets SP to the top of program space (`0x21000`) and jumps to the program's start pointer, otherwise it goes back to idle
 
 **Errors:**
@@ -211,12 +211,12 @@ Options to be able to be configured:
 
 - Takes in `0x8A` byte to indicate a memory dump request
 - Takes in a 4-byte dump size, followed by a 4-byte starting address (**size first**)
-- Responds with the raw bytes (`size` bytes), with no header or footer
+- If the request is valid, responds with `0x8C` (memory read confirmed) followed by the raw bytes (`size` bytes), with no footer. The `0x8C` is only sent after the bounds check passes, so the first byte alone tells data (`0x8C`) apart from an error (`0xE8`), even when the dumped memory itself starts with `0xE8 0x01`
 - If out of bounds, returns `0xE8` 'error' byte and then error code `0x01`. The valid range is from `0x00000000` up to the top of BIOS data space (`0x21FBF`), the BIOS stack and everything above it (including the MMIO region) cannot be dumped. A size of `0` is invalid, a dump ending exactly at `0x21FBF` is valid, and sizes or offsets that wrap around are rejected.
 
 > Normally this is taken care of by the console tool, but is a hardware safety check nonetheless.
 
-> **NOTE:** The same routine (and the same bounds check) is used to read back programs for verification (`0xCB`), which also needs a validly loaded program and otherwise responds with `0xEC` + `0x01`.
+> **NOTE:** The same routine (and the same bounds check) is used to read back programs for verification (`0xCB`), which also needs a validly loaded program and otherwise responds with `0xEC` + `0x01`. A standalone `0xCB` replies `0x8C` followed by the program bytes, the `0xCB` header is only sent in front of the read-back during a load.
 
 ### 3. Register Display
 > Dumps the 31 GPRs after a program completes, if it was requested during load.
@@ -301,6 +301,7 @@ Options to be able to be configured:
 - `0xAB` - Connection Valid (SYN-ACK)
 - `0xCA` - Program Load Complete (sent once after every completed load, before any verify read-back)
 - `0xCB` - Program Verify read-back follows (sent for `0xC1` during load)
+- `0x8C` - Memory Read Confirmed (sent after a memory dump, or any program read-back, passed its bounds check, the requested bytes follow)
 - `0xDA` - Device Data Display
     - `0x00` - BIOS Name
     - `0x01` - Architecture
@@ -328,7 +329,7 @@ Options to be able to be configured:
     - `0x0F` - BIOS Log Toggle
     - `0x50` - Limited POST-fail Idle (connection only)
 
-> **NOTE:** Defined in `protocol.inc` but not currently transmitted: `0x7A`, `0x7F`, `0x70`/`0x71` as telemetry display prefixes, `0x8A` (memory dump header), `0xCC` (program run begin), `0xD1` (device info parameter prefix). Memory dump, program verify and device data parameters are sent without them.
+> **NOTE:** Defined in `protocol.inc` but not currently transmitted: `0x7A`, `0x7F`, `0x70`/`0x71` as telemetry display prefixes, `0x8A` (memory dump header), `0xCC` (program run begin), `0xD1` (device info parameter prefix). Device data parameters are sent without them. Memory dump and program verify use `0x8C` instead of `0x8A`.
 
 ### Error Codes (from: BIOS)
 
@@ -407,7 +408,7 @@ Options to be able to be configured:
 > **NOTE (TBD):** The previous `--offset` flag for `run` has no BIOS-side equivalent right now (the offset can only be set through `load`).
 
 ### `verify`
-- Verifies the loaded binary by printing the program bytes back to the console.
+- Verifies the loaded binary by printing the program bytes back to the console. The BIOS sends `0x8C` before the bytes.
 - Needs a validly loaded program, otherwise the BIOS responds with `0xEC` + `0x01`.
 
 ### `telemetry --mode=<true/false> --reset=<true/false> -r`
@@ -479,6 +480,7 @@ Options to be able to be configured:
 - The `--size` parameter is the number of bytes from the offset that the hex dump will print. It is a mandatory parameter.
 - If the offset is invalid, or `BYTE COUNT` goes out of bounds, the program will refuse to print the bytes.
 - The BIOS can only dump up to the end of BIOS data space (`0x21FBF`), the BIOS stack and MMIO region are out of bounds. A size of `0` is rejected too.
+- A valid dump starts with `0x8C`, an out of bounds one is the bare `0xE8` + `0x01`.
 
 ### `help`
 - Provides the list of terminal commands and helpful info.

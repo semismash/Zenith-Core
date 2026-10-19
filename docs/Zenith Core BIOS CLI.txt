@@ -1,0 +1,81 @@
+Zenith Core BIOS CLI -
+
+Threads - (Two required, as full-duplex)
+Writer Thread - Takes input command, and translates it into output byte stream
+Listener Thread - Takes in incoming bytes, and converts it into output text regarding the repsonse
+
+Components - (W - Writer Thread; L - Listener Thread)
+> Shell (W/L) - Command and Response Display
+- Command Parser + Syntactical Analyzer (W) - Analyzes Command Syntax and parses, if incorrect command or parameter, reports immediately
+- Response Printer (L) - Receives processed output response from client and converts it into text
+> Client (W/L) - Handles two-way communication
+- Command Analyzer (W) - Checks the command semantically, and sees if it arguments are valid or fits within bounds of the requested command
+- Byte Generator (W) - Converts command to byte stream, emitted as a constant set rate (either default, or determined by the command, e.g. sendbytes)
+- Device Data and State Cache (W/L) - Stores device data and state cache accordingly send bytes to other commands, and catch certain constraints early to prevent it from ever being transmitted to the BIOS ('responsible host'). Updates in real time using bytes transmitted from the device itself.
+- Message Buffer (L) - Stores received message bytes (strings) inside a buffer to be used, either for flushing or other use cases (e.g. Device Data transmission)
+- Response Analyzer (L) - Takes in incoming byte and builds it to form a response.
+> UART Transmitter - Transmits bytes via UART channel at configured baud tick.
+> UART Receiver - Receives bytes via UART channel at configured baud tick.
+> TCP Transport (RX - L, TX - W) - TCP byte transport, used for simulation.
+> Serial Transport (RX - L, TX - W) - Serial byte communication, used for actual FPGA implementation.
+
+Algorithm -
+Writer Thread:
+1) Take in input command. Lock further inputs during it.
+2) Parse command into respective datatype.
+2a) If there is a parsing error, directly return it to console using response printer to print it, and then unlock input. Else, proceed.
+3) Client processes input command, and semantically analyzes it.
+3a) If there are any mismatches in parameters, arguments, or directly conflicts with the BIOS state, error is returned to shell, which the shell then prints, and unlocks shell input.
+4) If no mismatches, then transmit command, and save the command state during its execution time in the client, and wait for response.
+4a) If the command isn't supposed to give a response, then don't separately save state, but listener will handle it separately. Refer to the listener section for if a response is expected, but no response is received.
+5) Convert transmitted command to respective byte stream (matched by table). Transmit via selected method (TCP or Serial).
+6) UART transmitter transmits said bytes via UART channel at configured baud tick.
+Listener Thread:
+1) Take in input bytes via UART receiver, detect them, and save them to FIFO buffer.
+2) Based on saved command state, existing internal protocols, and the byte buffer, perform a certain action (change command state, perform internal action such as modifying message buffer, device state, etc.), and clear FIFO if required.
+2a) If an error is detected (Error type byte + Error code byte), clear FIFO and message buffer immediately, stop accepting receptions, and implement a cooldown timer to lock communication for said time. Immediately transmit the error to shell to be printed.
+3) If incoming bytes are parsed properly, send response to shell.
+4) Shell takes incoming response and prints it based on requested format.
+NOTE: During program execution, certain commands can be run in a special state (such as sendbyte, sendbytes, etc.), this is intentional, as it allows a loaded program to accept inputs mid-execution.
+
+Suggested file structure (well, not structure, but suggested files so whatever, not incl. main.cpp and other scripts, not in order, subject to change) -
+1) shell.cpp/.hpp - Shell
+2) cmdparse.cpp/.hpp - Command Parser
+3) responseprint.cpp/.hpp - Response Printer
+4) client.cpp/.hpp - Client wrapper (includes byte FIFOs)
+5) cmd_analyze.cpp/.hpp - Command analyzer
+6) bytegen.cpp/.hpp - Byte generator
+7) rsp_analyze.cpp/.hpp - Response analyzer
+8) uart_module.cpp/.hpp - UART RX/TX module
+9) tcp_transport.hpp - TCP Transport wrapper
+10) srl_transport.hpp - Serial Transport wrapper
+11) device_state.hpp - Current Device (BIOS) State
+12) msg_buffer.hpp - Message buffer
+13) commands.hpp - Commands (formats for parsing and analysis)
+14) responses.hpp - Responses (for analysis and printing to shell)
+15) error.hpp - Client side errors (Parsing, Sema, etc.)
+16) bioserror.hpp - Bios side errors
+17) codes.hpp - Same as protocol.inc, but just in C++ as single source of truth
+18) cli.cpp/.hpp - Top level CLI module
+19) config.cpp - CLI configuration (add YAML/TOML later???)
+20) Others - (for USB and serial connection, etc., TBA)
+
+Proposed libraries for use -
+1) cli11 - Command parsing
+2) libserialport - Discover and interface with USB and serial devices
+3) cstdint - In stdlib, for fixed-size types
+4) fmt - For formatting when printing responses
+5) replxx - Not sure what this does, but will consider looking more into it
+6) chrono, thread - For synchronized transmission and reception (and other temporal operations), and for multi-threading
+7) filesystem, fstream - Loading files
+8) optional, variant, expected, span, charconv - Modern C++ utility features
+
+Considerations - (NEEDS ELABORATION)
+> When printing errors, writer thread locked, listener incoming bytes locked/paused as error is printed to console.
+> If a BIOS side error is flagged, writer thread is locked under cooldown, until all transmitted bytes drain.
+
+New proposed commands (ALL are client side only) -
+1) config - Change client configuration settings
+2) switch <tcp | serial> - Switch between TCP and serial
+3) net - Connect to network via TCP
+4) TBD
