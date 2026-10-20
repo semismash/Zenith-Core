@@ -108,6 +108,7 @@ namespace commands {
     struct CommandGitHub {};
 
     using Command = std::variant<
+        CommandConfig, CommandSwitch, CommandReset, CommandNet,
         CommandScan, CommandConnect, CommandLoad, CommandRun, 
         CommandVerify, CommandTelemetry, CommandMonitor, CommandLog, 
         CommandEcho, CommandDeviceInfo, CommandSync, CommandSendByte, 

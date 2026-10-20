@@ -151,7 +151,7 @@ Suggested file structure (well, not structure, but suggested files so whatever, 
 12) commands.hpp - Commands (formats for parsing and analysis)
 13) responses.hpp - Responses (for analysis and printing to shell)
 14) error.hpp - Client side errors (Parsing, Sema, etc.)
-15) bioserror.hpp - Bios side errors
+15) bios_error.hpp - Bios side errors
 16) codes.hpp - Same as protocol.inc, but in C++, GENERATED from protocol.inc by a small script (so the two can't drift)
 17) cli.cpp/.hpp - Top level CLI module
 18) config.cpp - CLI configuration (add YAML/TOML later???)
