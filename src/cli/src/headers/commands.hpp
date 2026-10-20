@@ -10,7 +10,8 @@ namespace commands {
 
     // probably not required, to be removed later
     enum class CommandName {
-        Scan, Connect,
+        Config, Switch, Reset,
+        Net, Scan, Connect,
         Load, Run, Verify,
         Telemetry, Status,
         Monitor, Log,
@@ -28,11 +29,19 @@ namespace commands {
     };
     
     // commands list:
+    struct CommandConfig {}; // params TBA
+
+    struct CommandSwitch {
+        bool fpga_else_sim; // fpga = true, sim = false
+    };
+
+    struct CommandReset {};
+
+    struct CommandNet {};   // params TBA
+
     struct CommandScan {};
 
-    struct CommandConnect {
-        // ports TBD
-    };
+    struct CommandConnect {}; // params TBA
 
     struct CommandLoad {
         std::string filename;
@@ -101,7 +110,7 @@ namespace commands {
     using Command = std::variant<
         CommandScan, CommandConnect, CommandLoad, CommandRun, 
         CommandVerify, CommandTelemetry, CommandMonitor, CommandLog, 
-        CommandEcho, CommandDeviceInfo, CommandUpdateInfo, CommandSendByte, 
+        CommandEcho, CommandDeviceInfo, CommandSync, CommandSendByte, 
         CommandSendByteList, CommandTelemetryStatus, CommandSelfTest, CommandHexDump, 
         CommandHelp, CommandAbout, CommandGitHub
     >;

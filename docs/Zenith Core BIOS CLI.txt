@@ -140,11 +140,11 @@ Suggested file structure (well, not structure, but suggested files so whatever, 
 1) shell.cpp/.hpp - Shell
 2) cmdparse.cpp/.hpp - Command Parser
 3) responseprint.cpp/.hpp - Response Printer
-4) session.cpp/.hpp - Session (state machine, generation counter, state cache, message buffer, response analyzer, cooldown). Replaces the old client / device_state / msg_buffer / rsp_analyze split. The read side needs no byte FIFO, the reader feeds bytes straight into on_byte.
+4) client.cpp/.hpp - Session (state machine, generation counter, state cache, message buffer, response analyzer, cooldown). Replaces the old client / device_state / msg_buffer / rsp_analyze split. The read side needs no byte FIFO, the reader feeds bytes straight into on_byte.
 5) cmd_analyze.cpp/.hpp - Command analyzer
 6) bytegen.cpp/.hpp - Byte generator
 7) uart_module.cpp/.hpp - UART RX/TX module
-8) transport.hpp - Common transport interface (write, read(timeout), flush_tx, close)
+8) transport.hpp - Common transport interface (write, read(timeout), flush_tx, close) [DEPRECATED, all transport protocol specified in tcp_transport.hpp and srl_transport.hpp directly]
 9) tcp_transport.hpp - TCP Transport (sim)
 10) srl_transport.hpp - Serial Transport (fpga)
 11) profile.cpp/.hpp - Sim / FPGA profiles (see Profiles)

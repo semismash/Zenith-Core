@@ -23,7 +23,7 @@ from pathlib import Path
 # ---- defaults (relative to this script's folder) ----
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_INPUT = SCRIPT_DIR / "../../firmware/protocol.inc"
-DEFAULT_OUTPUT = SCRIPT_DIR / "../src/protocol/codes.hpp"
+DEFAULT_OUTPUT = SCRIPT_DIR / "../src/headers/codes.hpp"
 # -----------------------------------------------------
 
 EQU = re.compile(r"^\s*\.equ\s+([A-Za-z_]\w*)\s*,\s*(\S+)\s*(?:#\s*(.*))?$")
