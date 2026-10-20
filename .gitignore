@@ -74,3 +74,4 @@ design_module_ref.sv.bak
 hazard_unit_old.sv
 .modified/
 local/
+obj_dir/
