@@ -375,8 +375,23 @@ Options to be able to be configured:
 
 > **NOTE:** BIOS-interfacing commands only function while the CPU is idle in BIOS mode, since command bytes sent over UART are not processed while a program is executing (the CPU does not implement interrupts). Control returns to BIOS once the program reaches its end (see Program Run). Purely client-side commands (e.g. `clear`, toggling `monitor`/`log` locally, `help`, listing a pending `sendbytes` queue) still work regardless of CPU state. `monitor`, if enabled, will only show activity during execution if the running program itself chooses to transmit over UART.
 
+### `config`
+- Change client configuration settings for the current active profile.
+
+### `switch <sim | fpga>`
+- Switch the current mode between software simulation and FPGA mode. Note that specific configuration settings will change depending upon in.
+
+### `reset`
+- Reset the CPU through a bridge side channel.
+- Simulation only.
+
+### `net` 
+- Connect to Verilator bridge via TCP
+- Simulation only.
+
 ### `scan`
 - Gives the available port names, including that the FPGA may be connected to.
+- FPGA only.
 
 ### `connect <PORTNAME> --timeout=TIME --retry=TIME`
 - Connects with the available port and returns the result if connected properly. If connection fails, the terminal will print the error as so.

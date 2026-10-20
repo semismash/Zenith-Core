@@ -14,7 +14,7 @@ namespace commands {
         Load, Run, Verify,
         Telemetry, Status,
         Monitor, Log,
-        Echo, DeviceInfo, UpdateInfo,
+        Echo, DeviceInfo, Sync,
         SendByte, SendBytes, HexDump,
         Clear, Help, About, GitHub
     };
@@ -73,9 +73,7 @@ namespace commands {
         std::set<DeviceDataParam> device_data_args;
     };
 
-    struct CommandUpdateInfo {
-        std::set<DeviceDataParam> update_data_args;
-    };
+    struct CommandSync {};
 
     struct CommandSendByte {
         uint8_t tx_byte;
