@@ -1,81 +1,181 @@
 Zenith Core BIOS CLI -
 
-Threads - (Two required, as full-duplex)
-Writer Thread - Takes input command, and translates it into output byte stream
-Listener Thread - Takes in incoming bytes, and converts it into output text regarding the repsonse
+Threads - (Three required: Shell, plus Writer and Reader as the full-duplex pair)
+Shell Thread (main) - Takes input, parses and semantically checks the command, submits it to the Session, then blocks until the Session is Idle again (this replaces the separate "lock further inputs" step). Also prints parse/semantic errors.
+Writer Thread - Takes the submitted command and translates it into an output byte stream. It is the ONLY thread that writes to (or flushes) the transport.
+Reader Thread - Takes in incoming bytes, feeds them to the Session's response analyzer and prints the resulting response text. It is the ONLY thread that reads from the transport.
+Why this split - Full duplex only needs independent TX and RX paths, which the UART, OS and TCP stack already provide. The shell gets its own thread because it blocks on user input, the reader because it blocks on the transport. More threads than this add locks, not speed (the link moves ~1 KB/s).
 
-Components - (W - Writer Thread; L - Listener Thread)
-> Shell (W/L) - Command and Response Display
-- Command Parser + Syntactical Analyzer (W) - Analyzes Command Syntax and parses, if incorrect command or parameter, reports immediately
-- Response Printer (L) - Receives processed output response from client and converts it into text
-> Client (W/L) - Handles two-way communication
-- Command Analyzer (W) - Checks the command semantically, and sees if it arguments are valid or fits within bounds of the requested command
-- Byte Generator (W) - Converts command to byte stream, emitted as a constant set rate (either default, or determined by the command, e.g. sendbytes)
-- Device Data and State Cache (W/L) - Stores device data and state cache accordingly send bytes to other commands, and catch certain constraints early to prevent it from ever being transmitted to the BIOS ('responsible host'). Updates in real time using bytes transmitted from the device itself.
-- Message Buffer (L) - Stores received message bytes (strings) inside a buffer to be used, either for flushing or other use cases (e.g. Device Data transmission)
-- Response Analyzer (L) - Takes in incoming byte and builds it to form a response.
+Thread rules - (these are what prevent the races)
+> One Session object owns the state machine, state cache, message buffer and response analyzer. One mutex + one condition variable.
+> No transport I/O and no printing while holding the Session mutex (copy what is needed, unlock, then act). A separate print mutex; never take the two in opposite order.
+> Abort = generation counter. Every submitted command has a generation number, an error bumps it. The writer checks it between every byte (waits with cv.wait_for, not sleep_for, so an abort wakes it immediately), flushes TX, stops, and does not touch the state.
+> The reader never blocks forever: its read timeout is the time until the Session's next deadline (response timeout, cooldown end), so no timer thread is needed.
+> Shutdown: std::jthread + stop token, short serial read timeout (~50 ms), shutdown() on the TCP socket to wake a blocked read.
+> on_byte(byte, now) and on_tick(now) on the Session are pure logic (state + byte + time in, events out). The threads are thin loops around them, so byte sequences from the BIOS test suite (tests/test_bios.py) can be replayed straight into them in unit tests, with no sockets or timing.
+
+Session State Machine -
+States: Disconnected, Idle, Sending, AwaitingResponse, ProgramRunning, Cooldown
+Who may change state:
+- Disconnected <-> Idle: shell only (connect / switch), and only while writer and reader are parked
+- Idle -> Sending: shell (submit)
+- Sending -> AwaitingResponse or ProgramRunning: writer, after the last byte, only if its generation is still current
+- AwaitingResponse -> Idle / Cooldown / ProgramRunning: reader
+- Any state -> Cooldown, and Cooldown -> Idle: reader (an error while Sending bumps the generation, which stops the writer)
+
+Components - (S - Shell Thread; W - Writer Thread; R - Reader Thread)
+> Shell (S/R) - Command and Response Display
+- Command Parser + Syntactical Analyzer (S) - Analyzes Command Syntax and parses, if incorrect command or parameter, reports immediately
+- Response Printer (R) - Receives processed output response from the Session and converts it into text
+> Client (S/W/R) - Handles two-way communication
+- Command Analyzer (S) - Checks the command semantically, and sees if its arguments are valid or fit within the bounds of the requested command (see Command Analyzer limits)
+- Byte Generator (W) - Converts command to byte stream, emitted in small chunks (<= 4 bytes, abort checked between them) at the pacing of the active profile (or determined by the command, e.g. sendbytes)
+- Session (S/W/R) - The single shared object described above. It contains:
+  - State Machine - the states and transitions above, plus the generation counter
+  - Device Data and State Cache (S/R) - Stores device data and BIOS state, so the command analyzer can catch constraints early and prevent them from ever being transmitted to the BIOS ('responsible host'). Updates in real time using bytes transmitted from the device itself (see Cache rules).
+  - Message Buffer (R) - Stores received message bytes (strings) inside a buffer to be used, either for flushing or other use cases (e.g. Device Data transmission)
+  - Response Analyzer (R) - Frame-aware (see Response frames): builds incoming bytes into responses based on the command it is waiting for. A byte is only treated as an error or a state update where a frame is allowed to start.
+  - Cooldown (R) - see Cooldown
+> Profile (S) - The Sim / FPGA settings bundle (see Profiles). Selected with the switch command.
 > UART Transmitter - Transmits bytes via UART channel at configured baud tick.
 > UART Receiver - Receives bytes via UART channel at configured baud tick.
-> TCP Transport (RX - L, TX - W) - TCP byte transport, used for simulation.
-> Serial Transport (RX - L, TX - W) - Serial byte communication, used for actual FPGA implementation.
+> Transport (W/R) - One common interface (write, read(timeout), flush_tx, close). Two implementations:
+- TCP Transport (RX - R, TX - W) - TCP byte transport, used for simulation (sim profile).
+- Serial Transport (RX - R, TX - W) - Serial byte communication, used for actual FPGA implementation (fpga profile).
+
+Profiles - (selected with `switch <sim | fpga>`)
+A profile bundles everything that differs between the simulation (always TCP, to the Verilator bridge) and the FPGA (always serial). `config` edits the values of the active profile, they are kept per profile.
+Setting                    | sim                                                     | fpga
+Transport                  | TCP, host:port (set with `net`)                         | Serial, port from `scan`/`config`, 9600 8N1, no flow control
+Time base                  | simulated time (wall-clock timers scaled by sim_time_scale, default 1.0) | real wall-clock time
+Byte pacing                | the bridge paces RX in simulated cycles; CLI sends chunks <= 4 bytes, TCP_NODELAY, small send buffer | the UART hardware paces; chunks <= 4 bytes, TX flushed on error
+Cooldown floor             | 0.5 s (wall-clock) AND the BIOS ready signal           | 0.5 s AND the BIOS ready signal
+Ready signal cap           | max(2 s, 4x floor), scaled by sim_time_scale            | max(2 s, 4x floor)
+Fallback timer             | 10 byte-times in simulated time (scaled)                | 10 byte-times (~10 ms @ 9600)
+Response / idle timeouts   | scaled by sim_time_scale, generous                      | real (BIOS-side timeouts: 6.7 s mid-command, 15 s ACK window)
+Assumed BIOS build         | short-timeout build (real timeouts are hours of wall-clock in sim) | normal build
+Extra commands             | net, reset (via the bridge side channel, TBD)           | scan
+- switch is only accepted while Disconnected or Idle (never while a command runs, in Cooldown, or while a program runs). It closes the transport, clears the state cache and message buffer, bumps the generation, loads the profile, and leaves the Session Disconnected until `connect` (sim: `net` first).
+- Everything profile dependent (timings, cooldown, pacing, timeouts, transport) is read from the active profile. No other code branches on sim vs fpga.
 
 Algorithm -
-Writer Thread:
-1) Take in input command. Lock further inputs during it.
+Shell Thread:
+1) Take in input command. Further input is blocked while the command runs (wait_idle).
 2) Parse command into respective datatype.
-2a) If there is a parsing error, directly return it to console using response printer to print it, and then unlock input. Else, proceed.
-3) Client processes input command, and semantically analyzes it.
-3a) If there are any mismatches in parameters, arguments, or directly conflicts with the BIOS state, error is returned to shell, which the shell then prints, and unlocks shell input.
-4) If no mismatches, then transmit command, and save the command state during its execution time in the client, and wait for response.
-4a) If the command isn't supposed to give a response, then don't separately save state, but listener will handle it separately. Refer to the listener section for if a response is expected, but no response is received.
-5) Convert transmitted command to respective byte stream (matched by table). Transmit via selected method (TCP or Serial).
-6) UART transmitter transmits said bytes via UART channel at configured baud tick.
-Listener Thread:
-1) Take in input bytes via UART receiver, detect them, and save them to FIFO buffer.
-2) Based on saved command state, existing internal protocols, and the byte buffer, perform a certain action (change command state, perform internal action such as modifying message buffer, device state, etc.), and clear FIFO if required.
-2a) If an error is detected (Error type byte + Error code byte), clear FIFO and message buffer immediately, stop accepting receptions, and implement a cooldown timer to lock communication for said time. Immediately transmit the error to shell to be printed.
-3) If incoming bytes are parsed properly, send response to shell.
-4) Shell takes incoming response and prints it based on requested format.
+2a) If there is a parsing error, print it directly using the response printer and stay at the prompt. Else, proceed.
+3) Command Analyzer semantically analyzes the command against a snapshot of the state cache.
+3a) If there are any mismatches in parameters, arguments, or direct conflicts with the BIOS state, the error is printed and the prompt returns.
+4) If no mismatches, submit the command to the Session (Idle -> Sending) and wait for it to finish (wait_idle).
+Writer Thread:
+1) Wait for a submitted command.
+2) Convert the command to its byte stream (matched by table) and send it through the transport at the profile's pacing.
+3) Between chunks, check the generation counter. If it changed (the reader saw an error), flush TX and stop, without touching the state.
+4) After the last byte, move the Session to AwaitingResponse (or ProgramRunning for commands that run a program). Every command is waited on until its completion marker (see Response frames), including commands with no response of their own (e.g. telemetry settings), because BIOS state logging is always on.
+Reader Thread:
+1) Read bytes from the transport (timeout = time until the next deadline) and hand each one to Session.on_byte.
+2) The response analyzer, based on the command being waited on, the existing protocol knowledge and the bytes so far, emits events: response, state update (F0 xx), BIOS error, program output, unsolicited byte.
+2a) If a BIOS error (error family byte + sub-code) is detected at a frame boundary: bump the generation (stops the writer), clear the message buffer, enter Cooldown and print the error immediately. Keep reading and discard everything until the cooldown ends.
+3) If the incoming bytes parse properly, send the response to the shell. The command completes when the completion marker arrives (see Response frames).
+4) Shell prints the response based on the requested format.
 NOTE: During program execution, certain commands can be run in a special state (such as sendbyte, sendbytes, etc.), this is intentional, as it allows a loaded program to accept inputs mid-execution.
+
+Cooldown - (settled)
+The BIOS already drains its own RX after every error (it discards bytes until its receiver has been quiet for ~5 byte-times, restarting on every byte, and transmits nothing). The CLI adds its own cooldown on top.
+- Trigger: a complete error frame (E3/E7/E8/EA/EC/EF + sub-code) recognized at a frame boundary. This includes the mid-command timeouts (EF 01, EA 02).
+- Immediately: bump the generation, the writer stops within one chunk and flushes TX (serial: flush the output buffer; TCP: bytes already in the kernel cannot be recalled, so keep the send buffer small), mark the command failed, print the error. The reader keeps reading and discards everything. The transfer is never continued after an error.
+- The cooldown ends only when BOTH hold:
+  - Floor: at least cooldown_ms (default 500, set with config) since the later of the last byte the host wrote and the error pair arriving. If that is shorter than 10 byte-times (only at very low baud rates), use 10 byte-times.
+  - Ready signal: the BIOS's F0 00 (or F0 50 in the limited POST-fail state), which it sends once it is back in idle. This does not depend on timing, so it is what makes the sim work.
+- Fallback: if no ready signal arrives within max(2 s, 4x floor), end the cooldown by the floor alone and print a warning.
+- State logging is on from connect and stays on (the `log` command only controls what is displayed), so the ready signal always exists.
+- The shell stays locked with a "BIOS cooling down" message until the cooldown ends.
+- The BIOS's own drain window depends on UART_POLL_CYCLES in bios.s (nominal 5 byte-times, always > 1 byte-time, probably 3 to 7 real), which is why the host does not rely on its exact value.
+- A host that stops, flushes and stays silent is fully protected. A host that only resumes after the BIOS cooldown has already ended is not, which is why a failed command is never resumed.
+
+Response frames - (what the Reader expects, BIOS state logging always on)
+General rules:
+- With logging on, every handler wraps its response: F0 <state> first, F0 00 last. Verified for connect, echo, self test, telemetry, dump, verify, load, run, device data. Exceptions: an unknown byte at idle gives just `EF 03` then F0 00 (no state of its own), and `FA 00` ends with the ack (logging is off afterwards).
+- Completion marker: F0 00 received AFTER the command's own F0 <state>. An idle heartbeat F0 00 (the BIOS re-enters idle about every 6.7 s while idle) that arrives before the command's own state log is ignored.
+- F0 xx, errors and ready signals are only recognized at frame boundaries, never inside raw data (dump/verify bytes, string payloads, u32 values, program output). All frames below have a fixed or length-prefixed size, except program output.
+- Errors are 2 bytes (family + sub-code), except EE (1 byte). They arrive after the command's F0 <state>.
+- Unsolicited: `50` right after BIOS boot (the POST UART byte). A `50` that is not part of a self test reply means the BIOS rebooted: clear the cache and go Disconnected.
+- Strings in device data: 3D + 4-byte length (LE, includes the null) + bytes, NO 3F. Messages (echo, startup message): 3D + length + bytes, then 3F.
+
+Command (host sends)         | Logged state | Response after the state log (completion F0 00 follows) | Errors
+connect: AA, then AC         | 0A           | AB; after AC, only on the first connection since boot / self test: message frame + 5C|5E + 5D + 6x[test, result] + 5F | EA 01 (bad ACK), EA 02 (ACK timeout, arrives after AB)
+echo: 3A 3D len bytes        | 03           | 3A 3D len bytes 3F                                         | E3 01 (len 0 or > 256), E3 02, E3 03 (no 3D)
+self test: 5A                | 05           | 50, message frame, 5C|5E, 5D, 6x[test, result], 5F         | -
+telemetry set: 7A ... 7A     | 07           | none (silent)                                              | E7 01/02/03
+telemetry query: 7A 7A       | 07           | 70 v 71 v 72 v (6 bytes)                                   | -
+telemetry status: 7D         | 07           | 7D, 4x[param 01..04, u32 LE], 7D (22 bytes)                | -
+dump: 8A size offset         | 08           | 8C, then size raw bytes                                    | E8 01 (the first byte tells 8C from E8)
+verify: CB                   | 08           | 8C, then program size raw bytes                            | EC 01 (no valid program)
+load: CA params CA size data | 0C           | CA (load complete); if C1: CB 8C + size bytes; if C0: run (see below) | EC 02-06 before any data, EF 01 mid-load timeout
+run: CC                      | 1C           | program output ..., then 75 register frame if C5 was set (75, 31x[reg, u32 LE], 75 = 157 bytes) | EC 01 right after F0 1C
+device data: DA              | 0D           | DA, 00 string, 01 string, 02..0A each [param, u32 LE] (11 params, no end marker, 105 bytes) | -
+log: FA 01 / FA 00           | 0F           | FA 01 (then F0 00) / FA 00 (logging now off, no F0 00)     | EF 02
+unknown byte at idle         | none         | -                                                          | EF 03
+Program output (ProgramRunning): bytes after F0 1C are program output. Messages framed as 3D len bytes 3F are printed as messages, everything else as raw output. The program is finished at F0 00 (or at the end of the register frame, then F0 00). Known limits: a program that itself emits F0 00, or 75 when register display is on, or EC 01 as its first bytes, cannot be told apart from the BIOS.
+The BIOS has no interrupts, so a stuck program cannot be stopped from the CLI: after a timeout the shell tells the user to reset (button on the FPGA, `reset` in sim).
+
+Cache rules - (updates from device bytes)
+- Device data (0xDA reply): RAM/ROM/program offsets and sizes, clock, baud tick. Fetched at connect, used by the command analyzer.
+- BIOS state: from F0 xx. POST result and the limited POST-fail state (0x50) from the connect/self test result frame.
+- Program valid flag: set by a completed load (CA reply), cleared by a self test, by EF 01 or any error after the load's data phase began. A load rejected in its header phase (EC 02-06 before any data) leaves the old program valid.
+- Telemetry settings: unknown after boot and after any E7 error. Re-query with 7A 7A after the cooldown.
+- Last load arguments (C3, C4, C5): kept, because CC re-runs with the same settings (a CC after a load with C5 also prints the register frame).
+- Cleared completely on switch, on a BIOS reboot (unsolicited 50) and on disconnect.
+
+Command Analyzer limits - (from the 0xDA reply where it exists, constants otherwise)
+- Program space: offset >= program offset and < program offset + program size (0x2000 .. 0x21000 now), from DA.
+- Offset and size must be multiples of 4. The console pads the binary. Size must not be 0.
+- Program size + 8 bytes (the BIOS jump-back tail) must fit between the offset and the top of program space.
+- Dump / verify: size >= 1, offset + size <= 0x21FBF + 1 (BIOS data space top; constant, not in DA). Verify needs a valid program (cache).
+- Echo: 1 to 256 bytes (BIOS echo buffer, constant).
+- Telemetry: at most 4 parameters before the closing 7A, arguments 0 or 1, 7A 7A is a query.
+- Limited POST-fail state: only connect and selftest are accepted, everything else is refused client-side.
+- Only sendbyte / sendbytes while ProgramRunning.
 
 Suggested file structure (well, not structure, but suggested files so whatever, not incl. main.cpp and other scripts, not in order, subject to change) -
 1) shell.cpp/.hpp - Shell
 2) cmdparse.cpp/.hpp - Command Parser
 3) responseprint.cpp/.hpp - Response Printer
-4) client.cpp/.hpp - Client wrapper (includes byte FIFOs)
+4) session.cpp/.hpp - Session (state machine, generation counter, state cache, message buffer, response analyzer, cooldown). Replaces the old client / device_state / msg_buffer / rsp_analyze split. The read side needs no byte FIFO, the reader feeds bytes straight into on_byte.
 5) cmd_analyze.cpp/.hpp - Command analyzer
 6) bytegen.cpp/.hpp - Byte generator
-7) rsp_analyze.cpp/.hpp - Response analyzer
-8) uart_module.cpp/.hpp - UART RX/TX module
-9) tcp_transport.hpp - TCP Transport wrapper
-10) srl_transport.hpp - Serial Transport wrapper
-11) device_state.hpp - Current Device (BIOS) State
-12) msg_buffer.hpp - Message buffer
-13) commands.hpp - Commands (formats for parsing and analysis)
-14) responses.hpp - Responses (for analysis and printing to shell)
-15) error.hpp - Client side errors (Parsing, Sema, etc.)
-16) bioserror.hpp - Bios side errors
-17) codes.hpp - Same as protocol.inc, but just in C++ as single source of truth
-18) cli.cpp/.hpp - Top level CLI module
-19) config.cpp - CLI configuration (add YAML/TOML later???)
-20) Others - (for USB and serial connection, etc., TBA)
+7) uart_module.cpp/.hpp - UART RX/TX module
+8) transport.hpp - Common transport interface (write, read(timeout), flush_tx, close)
+9) tcp_transport.hpp - TCP Transport (sim)
+10) srl_transport.hpp - Serial Transport (fpga)
+11) profile.cpp/.hpp - Sim / FPGA profiles (see Profiles)
+12) commands.hpp - Commands (formats for parsing and analysis)
+13) responses.hpp - Responses (for analysis and printing to shell)
+14) error.hpp - Client side errors (Parsing, Sema, etc.)
+15) bioserror.hpp - Bios side errors
+16) codes.hpp - Same as protocol.inc, but in C++, GENERATED from protocol.inc by a small script (so the two can't drift)
+17) cli.cpp/.hpp - Top level CLI module
+18) config.cpp - CLI configuration (add YAML/TOML later???)
+19) Others - (for USB and serial connection, etc., TBA)
 
 Proposed libraries for use -
-1) cli11 - Command parsing
-2) libserialport - Discover and interface with USB and serial devices
+1) cli11 - Command parsing. For the REPL, parse one line at a time, call app.clear() between lines, tokenize quoted strings yourself and parse numbers as strings (hex/binary with charconv).
+2) libserialport - Discover and interface with USB and serial devices (also scan, and sp_flush for the TX flush). Its event API only covers serial ports, not sockets, so each transport does its own wait.
 3) cstdint - In stdlib, for fixed-size types
 4) fmt - For formatting when printing responses
-5) replxx - Not sure what this does, but will consider looking more into it
-6) chrono, thread - For synchronized transmission and reception (and other temporal operations), and for multi-threading
+5) replxx - Readline-style line editing, history and tab completion for the shell. Check its docs for printing from another thread (the reader prints program output while the prompt is open).
+6) chrono, thread, mutex, condition_variable, atomic - For synchronized transmission and reception (and other temporal operations), and for multi-threading (std::jthread with stop tokens)
 7) filesystem, fstream - Loading files
-8) optional, variant, expected, span, charconv - Modern C++ utility features
+8) optional, variant, expected, span, charconv - Modern C++ utility features. std::expected and std::span need C++23/C++20 and a recent compiler (otherwise C++20 + tl::expected).
 
-Considerations - (NEEDS ELABORATION)
-> When printing errors, writer thread locked, listener incoming bytes locked/paused as error is printed to console.
-> If a BIOS side error is flagged, writer thread is locked under cooldown, until all transmitted bytes drain.
+Considerations -
+> Cooldown, the thread rules and the frame-aware analyzer above are settled and replace the old "needs elaboration" notes.
+> When printing errors, the shell is already blocked on the command (or in Cooldown), so the reader prints without fighting the prompt. The only time the prompt and the reader overlap is ProgramRunning.
+> Real BIOS timeouts are in simulated cycles: a sim run needs a BIOS build with shorter timeouts, otherwise a single idle or ACK timeout takes hours of wall-clock time.
+> Not yet decided: sim reset side channel, ready-signal cap value for slow sims.
 
 New proposed commands (ALL are client side only) -
-1) config - Change client configuration settings
-2) switch <tcp | serial> - Switch between TCP and serial
-3) net - Connect to network via TCP
-4) TBD
+1) config - Change client configuration settings (of the active profile)
+2) switch <sim | fpga> - Switch between the simulation profile (TCP) and the FPGA profile (serial), including their timing, cooldown and pacing settings (see Profiles)
+3) net - Connect to the Verilator bridge via TCP (sim profile only)
+4) reset - Reset the simulated CPU through the bridge side channel (sim profile only, TBD)
+5) TBD

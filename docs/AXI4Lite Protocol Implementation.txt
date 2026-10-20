@@ -1,0 +1,319 @@
+AXI4Lite Protocol Implementation -
+
+LEGEND:
+M - Master
+S - Slave
+
+Shared -
+> Global
+- ACLK (M -> S) -> named clk in the RTL (name unchanged)
+- ARESETn (M -> S) -> named rst_n in the RTL (name unchanged, active low)
+
+Instruction Fetch -
+> Write Address - None
+> Write Data - None
+> Write Response - None
+> Read Address
+- ARVALID (M -> S)
+- ARREADY (S -> M)
+- ARADDR (M -> S)
+> Read Data
+- RVALID (S -> M)
+- RREADY (M -> S)
+- RDATA (S -> M)
+- RRESP (S -> M)
+
+Data Mem Access -
+> Write Address
+- AWVALID (M -> S)
+- AWREADY (S -> M)
+- AWADDR (M -> S)
+> Write Data
+- WVALID (M -> S)
+- WREADY (S -> M)
+- WDATA (M -> S)
+- WSTRB (M -> S)
+> Write Response
+- BVALID (S -> M)
+- BREADY (M -> S)
+- BRESP (S -> M)
+> Read Address
+- ARVALID (M -> S)
+- ARREADY (S -> M)
+- ARADDR (M -> S)
+> Read Data
+- RVALID (S -> M)
+- RREADY (M -> S)
+- RDATA (S -> M)
+- RRESP (S -> M)
+
+Signal Widths -
+> ADDR = 32, DATA = 32, WSTRB = 4, RESP = 2, everything else = 1
+> No PROT, ID, LAST, etc. (AXI4Lite doesn't have them anyway)
+
+Memory Map -
+> All region constants live in ONE place (the rv32i package) and are used by fetch, lsu, the decoders and the slaves. Keep it in sync with linker.ld
+- ROM  : 0x00000000, ROM_SIZE_BYTES (currently 8 KiB, 0x00000000 - 0x00001FFF)
+- RAM  : right after ROM, RAM_BASE = ROM_SIZE_BYTES, RAM_SIZE_BYTES (currently 128 KiB, 0x00002000 - 0x00021FFF)
+- MMIO : 0x80000000 and above (bit 31 set)
+- Everything else is unmapped (0x00022000 - 0x7FFFFFFF)
+- function region_of(addr) returns ROM / RAM / MMIO / NONE
+> Every region size is a multiple of 4 bytes, so an aligned word is either fully inside a region or fully outside it. This is why ghost bytes (zero padding at the end of memory) are NOT needed anymore
+
+Access Rules (alignment + map checks, done in the MASTERS) -
+> Reads
+- The slave always returns the full aligned word at {addr[31:2], 2'b00}
+- The master picks the lanes (addr[1:0] + funct3), sign/zero extends. No req_bytes / size on the read side anymore
+> Writes
+- The master puts wdata in the right lanes and sets WSTRB. WSTRB = size_mask << addr[1:0], size_mask: byte 4'b0001, half 4'b0011, word 4'b1111
+- wdata = rs2 << (8 * addr[1:0])
+> Alignment
+- Word accesses must have addr[1:0] = 0. Unaligned word accesses are banned (fault, no request sent)
+- Halfword accesses must lie inside a single word (addr[1:0] != 3). Odd halfwords at addr[1:0] = 1 are therefore allowed, tell me if even-only is preferred
+- Byte accesses happen as normal
+- Instruction fetch: PC[1:0] must be 0 (checked in fetch, carried to the pipeline as a fault bit together with the response)
+> LSU prechecks (all before any request is sent)
+- misaligned access
+- unmapped address (region_of == NONE)
+- write to ROM
+- access that runs past the end of its region (check the LAST byte, addr + size - 1, in 33 bits so 0xFFFFFFFE + 4 can't wrap)
+- if a precheck fails, NO bus request is sent, the instruction goes on as a bubble with the fault bit set (data fault)
+> Fetch has NO map check. An unmapped or MMIO instruction fetch goes out as a normal AR and the default slave answers DECERR (one mechanism only, since fetch is speculative and pipelined)
+
+Response Codes (RRESP / BRESP) -
+> 2 bits on the bus: OKAY 00, SLVERR 10, DECERR 11 (EXOKAY is not supported in Lite)
+> Inside the core only resp[1] is used: 1 = fault, 0 = OK. resp[0] only tells the cause (decode vs slave) and can be latched later if a fault-cause register is added
+> resp is only looked at in the cycle where VALID and READY are both high
+> RDATA is never used on an error, and reg_write is gated off for a load that returned an error
+> DECERR comes from the default slave (anything unmapped). SLVERR comes from a slave that exists but refuses the access (write to ROM, write to a read-only MMIO register)
+> Since the masters already catch most of these first, DECERR / SLVERR are mostly a backstop. Their job is to guarantee that EVERY accepted request gets a response so the bus can never hang
+
+Optimizations and Modifications -
+> Separate Instruction and Data ports (Already done since the memory is dual ported -> Consequence is extra multiplexers (area), not extra capacity)
+> Remove Write Channel For Instruction Fetch (Read-Only Master)
+> Remove PROT Signals
+> ARREADY (Slave) is permanently driven to high (FPGA only) -> Single Cycle Address Handshake
+> RREADY (Master) is permanently driven to high (FPGA only) -> Single Cycle Data Handshake
+- since RREADY never goes low, the master has to capture every response itself (capture buffer in fetch, extraction in WB for loads), see State Machine Logic
+- (replaces the old "almost always high except stalls", because a slave that has to hold R until RREADY conflicts with a permanently high ARREADY)
+> AWREADY (Slave) is always high except when there is an unaccepted B response (with BREADY permanently high this is effectively always high)
+> WREADY (Slave) is always high except when there is an unaccepted B response (same)
+> BREADY (Master) is always high (FPGA only)
+> Block RAM output register is the Read Data Channel (RDATA). ram.sv / rom.sv become word-wide (32-bit words, byte write enables) so Vivado can map them to block RAM
+> Stall on late response only
+- "supposed to be valid" means the master knows an access is outstanding and the response is not there when the instruction needs it
+- load in WB and RVALID is low, MMIO store in MEM and BVALID is low, or VALID is up and READY is low
+- these freeze the pipeline. Otherwise memory accesses cost no stall at all
+> Posted RAM stores: assert AW and W together, the instruction leaves MEM as soon as both are accepted, B is collected later without waiting
+- an error on B for a posted store is IMPRECISE (reported one instruction late), it raises the data fault and the store address is latched
+> MMIO stores are NOT posted: the instruction stays in MEM until its own B arrives (precise fault)
+- can be switched to posted later if wanted, MMIO slave always answers OKAY in 1 cycle right now
+> Pipelined instruction fetch: up to MAX_OUTSTANDING reads in flight (default 2). Setting MAX_OUTSTANDING = 1 gives strict one-outstanding fetch
+> Request PC moves into fetch.sv (the old pc_q is deleted)
+> VALID must hold (with its payload stable) until READY. The masters are written this way even though the slaves never delay, so a cache can slot in later without touching them
+> Alignment checks and map checks happen in the masters (see Access Rules)
+
+Considerations -
+> MMIO is an AXI4Lite slave (mmio_interface.sv), although with guaranteed lowest-time accesses. ARREADY, AWREADY, WREADY are constant high, RVALID / BVALID come exactly 1 cycle after the handshake
+> MMIO registers keep their current byte addresses, but the slave always returns the full aligned word with each register sitting in its own byte lane (e.g. META_CONTROL_RD at 0x1001 is lane 1 of word 0x1000, the counters at 0x1004 / 0x1008 / 0x100C / 0x1010 are plain 32-bit words). The BIOS can keep using lb/lbu, the LSU picks the lane
+> Read side effects (UART RX pop) fire only on the cycle ARVALID && ARREADY && address = UART_RX_DATA. RDATA is registered at that same handshake so the byte is latched before it is popped
+> The masters send exactly ONE AR per access (ARVALID drops after the handshake), otherwise the pop would fire once per stalled cycle and bytes would be lost
+> Writes use WSTRB: UART_TX_DATA and META_CONTROL only react to wstrb[0]. A sb to 0x8000000D can no longer trigger the UART TX. A write to UART_TX_DATA while the transmitter is busy is ignored (current behavior) and still answers OKAY
+> Status bits (tx_busy, etc.) update on the same clock edge as the write, so a poll right after a TX write can't read a stale "ready"
+> Unmapped MMIO address or write to a read-only register -> SLVERR (CHECK against BIOS_Protocol_Notes.md first: if the BIOS ever reads a hole and expects a value, add a reserved register that reads 0)
+> ReqBytes: keep the Enum name, rename the req_bytes ports to wstrb. NOTE: the enum holds byte COUNTS (ONE / TWO / FOUR = 1 / 2 / 4), not strobe masks, so wstrb (logic [3:0]) is computed from ReqBytes (from funct3) and addr[1:0] inside the LSU, it is not a plain rename. The ReqBytes enum is no longer used by any memory
+> Reset: every VALID is low in reset, every slave clears its handshake state / select registers / outstanding counters. The memory ARRAYS are NOT reset (resetting them stops Vivado from using block RAM)
+> bios.hex / bootloader.hex are read with $readmemh as one byte per entry today. ROM and RAM become 32-bit words, so these files need to be regenerated as one little-endian 32-bit word per entry
+> Instruction counter (meta): NOP bubbles still count as instructions. With the registered read there is ONE extra startup bubble in ID (first response arrives a cycle later than the old combinational fetch), so meta's post-reset mask has to cover 2 cycles instead of 1. A bubble caused by a late response counts the same way
+> Program loaded into RAM and then jumped to: Xilinx block RAM behaves differently when one port reads an address that the other port writes in the same cycle (can be undefined depending on the mode). The BIOS has a long gap between the load and the jump so it is probably fine, but treat it as a decision, not an accident
+> Read after write ordering: AXI does not order a read after a write to the same address. With the 1-cycle RAM a load right after a store sees the new data anyway. When a cache is added, a dependent read has to wait for B
+> Utilize mirror state machine logic between master devices for consistency (fetch and the LSU read/write sides follow the same hold-until-READY pattern)
+> Halt / fault handling (latched fault flags, pipeline freeze) is a SEPARATE piece of work, not part of this protocol change. The 1-bit fault wires into the existing halt logic stay as they are
+
+State Machine Logic -
+> Ground Rules
+- Slaves: ARREADY, AWREADY, WREADY are constant 1. RVALID comes exactly 1 cycle after the AR handshake, BVALID exactly 1 cycle after the AW + W handshake. Responses come back in order
+- Masters: RREADY and BREADY are constant 1. VALID and payload are held until READY
+- VALID never depends on READY
+- Master AXI outputs depend only on registered state and on the EX-stage redirect (internal). ONE documented exception: the internal stall signal (it can depend on RVALID / BVALID) gates the redirect in fetch. Revisit it if strict AXI compliance or timing ever needs it
+- Every accepted request gets exactly one response
+> Slave - Read (RAM, ROM, MMIO, default), 2 states
+- RD_IDLE : rvalid = 0
+- RD_RESP : rvalid = 1, rdata = aligned word, rresp
+- RD_IDLE -> RD_RESP on arvalid
+- RD_RESP -> RD_RESP on arvalid (back to back reads, 1 per cycle)
+- RD_RESP -> RD_IDLE on !arvalid
+- RAM / ROM: rdata is the block RAM output register, rresp = OKAY
+- MMIO: rdata comes from the register mux, latched at the AR handshake. UART RX pop (uart_rx_ack) fires on that handshake
+- default slave: rdata = 0, rresp = DECERR
+> Slave - Write (RAM, ROM, MMIO, default), 2 states
+- WR_IDLE : bvalid = 0
+- WR_RESP : bvalid = 1, bresp
+- WR_IDLE -> WR_RESP when awvalid && wvalid
+- WR_RESP -> WR_RESP when another awvalid && wvalid fires (back to back writes)
+- WR_RESP -> WR_IDLE otherwise
+- awready = wready = !(WR_RESP && !bready), always 1 right now
+- RAM: writes byte lane i when wstrb[i] is set, at the same clock edge as the handshake, bresp = OKAY
+- ROM: no write happens, bresp = SLVERR
+- MMIO: read-only register -> SLVERR, otherwise OKAY. UART TX start / META_CONTROL only react to wstrb[0]
+- default slave: still accepts AW + W, then bvalid with DECERR (it must never drop a write silently, or the master hangs)
+- The slaves assume AW and W of one write are presented in the SAME cycle (true for the LSU). The masters still track them separately
+> Interconnect (decoders)
+- Instruction side (inside mem.sv): fetch -> {ROM, RAM, default}
+- Data side, two levels: LSU -> decoder inside rv32i_core -> {MMIO (mmio_interface.sv), external port to mem.sv}. Inside mem.sv: {ROM, RAM, default}
+- Read: select = region_of(araddr). arvalid only goes to the selected slave, the master's arready is the selected slave's arready. rd_sel_q is loaded on the AR handshake and steers rvalid / rdata / rresp back
+- Write: select = region_of(awaddr). awvalid AND wvalid go to the selected slave (W is steered by the AW address). wr_sel_q is loaded on the AW + W handshake and steers bvalid / bresp back
+- One select register per direction works only because every slave has fixed latency. A slower slave (cache) means replacing it with a small FIFO of selects
+> Fetch Master (read-only)
+- Registers
+- req_pc : next sequential fetch address, reset = reset vector (0x00000000)
+- inflight : ARs accepted whose R has not been received yet (0 .. MAX_OUTSTANDING)
+- ar_fifo : depth MAX_OUTSTANDING, entry = {pc, misaligned}. Push on AR handshake, pop on R handshake
+- discard : number of upcoming R's that belong to flushed requests (to be dropped)
+- cap_buf : capture buffer, depth MAX_OUTSTANDING, entry = {instr, pc, fault}, cap_cnt entries (needed because RREADY is always 1)
+- ar_hold : latches {araddr} if arvalid && !arready, and keeps it stable until the handshake (never used while ARREADY is constant 1)
+- Request side
+- redirect_eff = redirect && !stall (redirect = branch_taken from EX, redirect_pc from pc.sv, stall = IF/ID frozen)
+- araddr = redirect_eff ? redirect_pc : req_pc
+- arvalid = redirect_eff || (inflight + cap_cnt < MAX_OUTSTANDING)
+- with a 1-cycle slave inflight <= 1, so a redirect can always issue. A slower slave needs a redirect_pending register (inflight - rvalid must be < MAX_OUTSTANDING on a redirect), not needed now
+- on AR handshake: req_pc <= araddr + 4, push {araddr, araddr[1:0] != 0} into ar_fifo, inflight++
+- MAX_OUTSTANDING = 2 -> 1 instruction per cycle. MAX_OUTSTANDING = 1 -> strict, 1 instruction per 2 cycles
+- Response side (a response is "good" when it is not discarded)
+- on R handshake: pop ar_fifo head {pc_h, mis_h}, inflight--
+- on redirect_eff: drop the arriving R, clear cap_buf, discard <= inflight - (rvalid ? 1 : 0). The new AR(target) is not counted, it is pushed after the stale ones, so the stale ones come out first
+- else if discard > 0 and rvalid: drop the R, discard--
+- else good R: item = {rdata, pc_h, rresp[1] | mis_h}
+- no stall and cap_cnt = 0 -> item goes to IF/ID this cycle (fetch_valid = 1)
+- no stall and cap_cnt > 0 -> deliver the head of cap_buf, push the arriving item to the tail
+- stall -> push the item into cap_buf, nothing delivered
+- nothing to deliver -> fetch_valid = 0, instr_out = NOP_INSTR (addi x0, x0, 0), mem_fault = 0. This replaces the old "not valid, freeze PC + IF/ID" behavior (which let ID/EX advance and ran an instruction twice)
+- a faulting item carries mem_fault = 1 into IF/ID (same path as today), a wrong-path fault is flushed with its instruction and can't halt
+- Timing (1-cycle slave, no stall)
+- c0: AR(pc0)
+- c1: R(i0) -> IF/ID, AR(pc1)
+- c2: R(i1) -> IF/ID, AR(pc2) ...
+- taken branch in EX at cycle t: AR(target) at t, R(wrong path) dropped at t, R(target) at t+1 -> IF/ID, so the bubble count and the 2-cycle penalty are the same as the simulation core
+> LSU Master
+- Prechecks (MEM stage, combinational): see Access Rules. On failure no request is sent and data_fault is raised
+- Read side
+- ar_sent : this MEM instruction's AR has been accepted
+- data_arvalid = is_mem_read && !precheck_fault && !ar_sent
+- on AR handshake: ar_sent <= 1. The load can leave MEM when (arvalid && arready) || ar_sent. ar_sent clears when the instruction leaves MEM
+- R arrives while the load is in WB (1-cycle slave). The load result is formed in WB (see write_back.sv), so funct3 and addr[1:0] travel into MEM/WB
+- WB stall: wb_is_load && !data_rvalid freezes every stage, including MEM/WB (data would be lost otherwise since RREADY is constant 1)
+- at most 2 reads are outstanding at once (the load in WB receiving its R, and the load in MEM sending its AR), so back-to-back loads don't need a bubble
+- a slave that answers later than 1 cycle would need a one-entry capture register in the LSU (not needed now)
+- an R with rresp[1] set raises data_fault and gates reg_write off for that load
+- Write side, 3 states
+- WR_IDLE -> WR_REQ on a store in MEM (no precheck fault)
+- WR_REQ : aw_sent / w_sent flags, awvalid and wvalid are each held with their payload until their OWN ready arrives. RAM store: once both are accepted the instruction leaves MEM (posted) -> WR_IDLE. MMIO store: once both are accepted -> WR_WAITB
+- WR_WAITB : MEM holds until the store's own B arrives, then it leaves -> WR_IDLE
+- b_outstanding counter: +1 on an AW + W handshake, -1 on bvalid. An MMIO store leaves MEM when it is accepted and b_outstanding (after this cycle's updates) is 0. This stops it from taking the B of an older posted store as its own
+- bvalid with bresp[1] set raises data_fault. For a posted store this is one instruction late, and the store address is latched (last_wr_addr) for reporting
+- Stall equations
+- mem_stage_busy (to hazard unit, same name): load AR not yet accepted, or store AW / W not yet accepted, or MMIO store without its B. Holds MEM and everything before it, WB gets a bubble
+- wb_data_wait (new, to hazard unit): wb_is_load && !data_rvalid. Freezes every stage
+- Load-use stall: unchanged, 1 cycle
+> Timing Summary (design intent, nothing here has been simulated)
+- RAM load : MEM c0 (AR) -> WB c1 (R) -> usable in WB, forwarded
+- RAM store : MEM c0 (AW + W, RAM write at the end of c0), instruction leaves MEM, B at c1 ignored unless error
+- MMIO read : same as a RAM load
+- MMIO store : MEM c0 (AW + W), MEM c1 (B arrives), leaves at the end of c1 (1 extra cycle in MEM)
+- Stalls then come only from: load-use (1), taken branch / jump flush (2), MMIO store (1), late response (slave / cache later)
+
+Module Ports - (Includes Additions, Renaming, and potential Deletions)
+Naming: prefix if_ for the instruction port and data_ for the data port, followed by the AXI4Lite signal name in lowercase (if_araddr, data_awvalid, ...). Mirror names on masters and slaves. Inside rv32i_core.sv wires use the suffix _out for signals driven by fetch / lsu and _in for signals coming back from the decoder (e.g. data_araddr_out, data_rdata_in). clk and rst_n keep their names everywhere
+
+fetch.sv: (M)
+mem_fetch_addr -> (RENAME) if_araddr
+(NEW) if_arvalid (NOT the same as fetch_valid. fetch_valid is response side, "an instruction is delivered to IF/ID this cycle". if_arvalid is a new request side output, so both stay)
+(NEW) if_arready (in)
+instr_valid -> (RENAME) if_rvalid (in)
+instr_in -> (RENAME) if_rdata (in)
+is_not_found -> (RENAME & WIDEN) if_rresp [1:0] (in)
+(NEW) if_rready (out, constant 1)
+mem_fault -> KEEP (1-bit out to the core, = if_rresp[1] | misaligned, carried through IF/ID like today)
+fetch_valid -> KEEP, new meaning (instruction delivered this cycle). No longer needed by the stall logic
+pc_in -> DELETE (request PC register moves into fetch)
+(NEW) redirect (in, = branch_taken)
+(NEW) redirect_pc (in, from pc.sv)
+stall -> KEEP (IF/ID frozen)
+pc_out -> KEEP (PC of the instruction being delivered, from ar_fifo)
+instr_out -> KEEP (NOP_INSTR when nothing is delivered)
+pc_q -> DELETE
+pc.sv: (CHANGED)
+PC register -> DELETE (moves into fetch.sv)
+keeps only the combinational jump / branch target logic (target = base + imm, with the forwarded rs1 for JALR) -> new out pc_target, goes to fetch.redirect_pc
+clk, rst_n, pc_enable, pc_out -> DELETE
+(exact port trimming to be done while patching the file)
+lsu.sv: (M)
+mem_addr -> (RENAME) data_araddr
+(NEW) data_awaddr (same ALU address, only the valid decides which channel is used)
+mem_req_start -> (RENAME) data_arvalid
+(NEW) data_awvalid
+(NEW) data_wvalid
+(NEW) data_arready, data_awready, data_wready (in)
+write_enable -> DELETE
+data_in -> (RENAME) data_rdata (in, goes to write_back.sv; the LSU no longer forms the load result)
+mem_valid -> DELETE, replaced by data_rvalid (in) and data_bvalid (in)
+(NEW) data_rresp [1:0] (in)
+(NEW) data_bresp [1:0] (in)
+(NEW) data_rready (out, constant 1)
+(NEW) data_bready (out, constant 1)
+write_data -> (RENAME) data_wdata
+req_bytes -> (RENAME) data_wstrb [3:0] (computed, see Considerations)
+reg_data -> DELETE (load extraction and the mem_to_reg mux move to write_back.sv)
+mem_to_reg -> DELETE from the LSU (used in WB)
+mmio_data, mmio_access -> DELETE (MMIO now sits behind the decoder in rv32i_core)
+mem_stage_busy -> KEEP (this goes to hazard unit for stalling, not memory)
+(NEW) data_fault (out, 1 bit): precheck fault | R with rresp[1] | B with bresp[1]
+funct3, alu_res, is_mem_read, is_mem_write, rs2_in -> KEEP
+write_back.sv: (CHANGED, currently unused, gets revived)
+inputs: funct3, addr_lo [1:0], mem_to_reg, result (ALU / PC+4 value carried in MEM/WB), data_rdata, data_rresp [1:0]
+outputs: rd_data (aligned-word lane pick + sign / zero extension for loads, otherwise result), load_fault (= data_rresp[1] for a load)
+the core gates reg_write with !load_fault. rd_data is also the MEM/WB forwarding source
+mem_wb.sv: (CHANGED)
+carries result, mem_to_reg, funct3 (3 bits), addr_lo (2 bits) instead of the already-formed rd_data
+hazard_unit.sv / stall_unit.sv: (CHANGED)
+instr_fetch_valid -> DELETE (fetch inserts bubbles instead)
+(NEW) wb_data_wait (in) -> freeze every stage
+data_fetch_valid -> KEEP (= !mem_stage_busy)
+meta.sv: (CHANGED)
+post-reset counting mask = 2 cycles
+mem.sv: (S)
+All old ports -> DELETE (instr_addr, instr_out, instr_valid, instr_not_found, data_addr, req_bytes, write_enable, data_in, data_req_start, data_out, data_valid, data_not_found)
+in: if_araddr, if_arvalid, if_rready, data_araddr, data_arvalid, data_rready, data_awaddr, data_awvalid, data_wdata, data_wstrb, data_wvalid, data_bready
+out: if_arready, if_rvalid, if_rdata, if_rresp, data_arready, data_rvalid, data_rdata, data_rresp, data_awready, data_wready, data_bvalid, data_bresp
+contains: instruction side decoder, data side decoder, rd_sel_q / wr_sel_q, one default_slave per side, rom, ram
+parameters ROM_SIZE_BYTES, RAM_SIZE_BYTES -> KEEP (or take them from the package)
+ram.sv: (S)
+same port names as mem.sv (if_ = read-only port A, data_ = read / write port B), but it only sees requests already steered to it (valid is already qualified, address is relative to RAM_BASE)
+storage -> 32-bit words with byte write enables from data_wstrb (replaces the Byte container)
+rresp / bresp are always OKAY
+rom.sv: (S)
+same as ram.sv, but both ports are read-only. Any write on the data port is answered with SLVERR and nothing is written
+default_slave.sv: (S, NEW)
+read + write channel slave, always accepts, always answers DECERR (rdata = 0). One instance per side inside mem.sv
+mmio_interface.sv: (S)
+mmio_data_addr, req_bytes, write_enable, mmio_data_in, mem_req_start, mmio_data_out, mmio_data_ready -> DELETE
+(NEW) data_awaddr, data_awvalid, data_awready, data_wdata, data_wstrb, data_wvalid, data_wready, data_bvalid, data_bready, data_bresp, data_araddr, data_arvalid, data_arready, data_rdata, data_rvalid, data_rready, data_rresp
+UART / META ports (uart_rx_data, uart_tx_data, meta_enable, meta_clear, meta_*_count, ...) -> KEEP
+MMIOAddress enum -> unchanged addresses (later: move it into the package instead of file scope)
+rv32i_core.sv: (M)
+DERIVED from the above. Delete: instr_in, data_in, if_fault, data_fault, instr_valid, data_valid, if_addr, data_addr, data_out, write_en, req_bytes, data_req_start
+Add (external, to mem.sv): if_araddr, if_arvalid, if_arready, if_rvalid, if_rready, if_rdata, if_rresp, data_awaddr, data_awvalid, data_awready, data_wdata, data_wstrb, data_wvalid, data_wready, data_bvalid, data_bready, data_bresp, data_araddr, data_arvalid, data_arready, data_rdata, data_rvalid, data_rready, data_rresp
+Keep: halt, instr_fault_out, data_fault_out, illegal_instr_out, stop, i_rx, o_tx
+Internal: a data decoder (LSU -> mmio_interface or the external port, selected by address bit 31) with the _out / _in wires
+instr_fault_out was never driven (it assigned a non-existent name), it becomes the 1-bit if fault out of fetch
+top.sv: (CHANGED)
+connects the AXI ports of rv32i_core to mem.sv. The Verilator public signals used by sim_main.cpp change (if_addr, instr, data_addr, write_data, write_enable), the testbench is updated separately
+
+Open Items -
+> Unmapped MMIO address response (SLVERR vs reserved register reading 0), check the BIOS notes
+> bios.hex / bootloader.hex format for word-wide ROM / RAM
+> Halt / fault-cause design (latched per-cause flags, pipeline freeze until reset)
+> Slower slaves / cache: redirect_pending in fetch, one-entry read capture in the LSU, FIFO of selects in the decoders, dependent reads waiting for B
+> Whether MMIO stores should be posted too
+> Block RAM read/write collision between the instruction port and the data port when loading a program and jumping to it
+> Even-only halfword alignment, if wanted
