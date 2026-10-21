@@ -105,7 +105,7 @@ Optimizations and Modifications -
 - load in WB and RVALID is low, MMIO store in MEM and BVALID is low, or VALID is up and READY is low
 - these freeze the pipeline. Otherwise memory accesses cost no stall at all
 > Posted RAM stores: assert AW and W together, the instruction leaves MEM as soon as both are accepted, B is collected later without waiting
-- an error on B for a posted store is IMPRECISE (reported one instruction late), it raises the data fault and the store address is latched
+- an error on B for a posted store is IMPRECISE (reported one instruction late), it raises the data fault
 > MMIO stores are NOT posted: the instruction stays in MEM until its own B arrives (precise fault)
 - can be switched to posted later if wanted, MMIO slave always answers OKAY in 1 cycle right now
 > Pipelined instruction fetch: up to MAX_OUTSTANDING reads in flight (default 2). Setting MAX_OUTSTANDING = 1 gives strict one-outstanding fetch
@@ -128,7 +128,7 @@ Considerations -
 > Program loaded into RAM and then jumped to: Xilinx block RAM behaves differently when one port reads an address that the other port writes in the same cycle (can be undefined depending on the mode). The BIOS has a long gap between the load and the jump so it is probably fine, but treat it as a decision, not an accident
 > Read after write ordering: AXI does not order a read after a write to the same address. With the 1-cycle RAM a load right after a store sees the new data anyway. When a cache is added, a dependent read has to wait for B
 > Utilize mirror state machine logic between master devices for consistency (fetch and the LSU read/write sides follow the same hold-until-READY pattern)
-> Halt / fault handling (latched fault flags, pipeline freeze) is a SEPARATE piece of work, not part of this protocol change. The 1-bit fault wires into the existing halt logic stay as they are
+> Halt / fault handling: sticky flags in rv32i_core (stop, instruction fault, data fault, illegal), set only by an instruction that survives to EX or by the LSU, cleared only by reset. STOP or any fault freezes every stage. Shown on LEDs only (no MMIO fault registers for now)
 
 State Machine Logic -
 > Ground Rules
@@ -169,7 +169,7 @@ State Machine Logic -
 - req_pc : next sequential fetch address, reset = reset vector (0x00000000)
 - inflight : ARs accepted whose R has not been received yet (0 .. MAX_OUTSTANDING)
 - ar_fifo : depth MAX_OUTSTANDING, entry = {pc, misaligned}. Push on AR handshake, pop on R handshake
-- discard : number of upcoming R's that belong to flushed requests (to be dropped)
+- af_stale : per-entry flag in ar_fifo, set on every in-flight entry at a redirect, a stale R is dropped (does the job of a discard counter, and also covers a held AR)
 - cap_buf : capture buffer, depth MAX_OUTSTANDING, entry = {instr, pc, fault}, cap_cnt entries (needed because RREADY is always 1)
 - ar_hold : latches {araddr} if arvalid && !arready, and keeps it stable until the handshake (never used while ARREADY is constant 1)
 - Request side
@@ -181,8 +181,8 @@ State Machine Logic -
 - MAX_OUTSTANDING = 2 -> 1 instruction per cycle. MAX_OUTSTANDING = 1 -> strict, 1 instruction per 2 cycles
 - Response side (a response is "good" when it is not discarded)
 - on R handshake: pop ar_fifo head {pc_h, mis_h}, inflight--
-- on redirect_eff: drop the arriving R, clear cap_buf, discard <= inflight - (rvalid ? 1 : 0). The new AR(target) is not counted, it is pushed after the stale ones, so the stale ones come out first
-- else if discard > 0 and rvalid: drop the R, discard--
+- on redirect_eff: drop the arriving R, clear cap_buf, mark every entry in ar_fifo stale. The new AR(target) is pushed non-stale after them, so the stale ones come out first
+- else if the head entry is stale: drop the R
 - else good R: item = {rdata, pc_h, rresp[1] | mis_h}
 - no stall and cap_cnt = 0 -> item goes to IF/ID this cycle (fetch_valid = 1)
 - no stall and cap_cnt > 0 -> deliver the head of cap_buf, push the arriving item to the tail
@@ -201,7 +201,8 @@ State Machine Logic -
 - data_arvalid = is_mem_read && !precheck_fault && !ar_sent
 - on AR handshake: ar_sent <= 1. The load can leave MEM when (arvalid && arready) || ar_sent. ar_sent clears when the instruction leaves MEM
 - R arrives while the load is in WB (1-cycle slave). The load result is formed in WB (see write_back.sv), so funct3 and addr[1:0] travel into MEM/WB
-- WB stall: wb_is_load && !data_rvalid freezes every stage, including MEM/WB (data would be lost otherwise since RREADY is constant 1)
+- WB stall: wb_is_load && !data_rvalid && !wb_cap_valid freezes every stage
+- WB capture register (wb_cap): if the WB load's R arrives while WB is held (any freeze), it is kept there, so the write-back value and the MEM/WB forwarding source stay valid until the load leaves WB
 - at most 2 reads are outstanding at once (the load in WB receiving its R, and the load in MEM sending its AR), so back-to-back loads don't need a bubble
 - a slave that answers later than 1 cycle would need a one-entry capture register in the LSU (not needed now)
 - an R with rresp[1] set raises data_fault and gates reg_write off for that load
@@ -210,9 +211,9 @@ State Machine Logic -
 - WR_REQ : aw_sent / w_sent flags, awvalid and wvalid are each held with their payload until their OWN ready arrives. RAM store: once both are accepted the instruction leaves MEM (posted) -> WR_IDLE. MMIO store: once both are accepted -> WR_WAITB
 - WR_WAITB : MEM holds until the store's own B arrives, then it leaves -> WR_IDLE
 - b_outstanding counter: +1 on an AW + W handshake, -1 on bvalid. An MMIO store leaves MEM when it is accepted and b_outstanding (after this cycle's updates) is 0. This stops it from taking the B of an older posted store as its own
-- bvalid with bresp[1] set raises data_fault. For a posted store this is one instruction late, and the store address is latched (last_wr_addr) for reporting
+- bvalid with bresp[1] set raises data_fault. For a posted store this is one instruction late
 - Stall equations
-- mem_stage_busy (to hazard unit, same name): load AR not yet accepted, or store AW / W not yet accepted, or MMIO store without its B. Holds MEM and everything before it, WB gets a bubble
+- mem_stage_busy (to hazard unit, same name): load AR not yet accepted, or store AW / W not yet accepted, or MMIO store without its B. Freezes every stage (letting WB retire while EX is held would leave EX with a stale forwarded operand)
 - wb_data_wait (new, to hazard unit): wb_is_load && !data_rvalid. Freezes every stage
 - Load-use stall: unchanged, 1 cycle
 > Timing Summary (design intent, nothing here has been simulated)
@@ -274,10 +275,13 @@ inputs: funct3, addr_lo [1:0], mem_to_reg, result (ALU / PC+4 value carried in M
 outputs: rd_data (aligned-word lane pick + sign / zero extension for loads, otherwise result), load_fault (= data_rresp[1] for a load)
 the core gates reg_write with !load_fault. rd_data is also the MEM/WB forwarding source
 mem_wb.sv: (CHANGED)
-carries result, mem_to_reg, funct3 (3 bits), addr_lo (2 bits) instead of the already-formed rd_data
+carries result, mem_to_reg, funct3 (3 bits), addr_lo (2 bits), is_stop instead of the already-formed rd_data and valid_instr
 hazard_unit.sv / stall_unit.sv: (CHANGED)
 instr_fetch_valid -> DELETE (fetch inserts bubbles instead)
 (NEW) wb_data_wait (in) -> freeze every stage
+(NEW) freeze (in, sticky STOP / HALT) -> freeze every stage
+(NEW) stop_in_flight (in) -> squash the ID instruction
+(NEW) meta_is_instr (out) -> instruction counter pulse
 data_fetch_valid -> KEEP (= !mem_stage_busy)
 meta.sv: (CHANGED)
 post-reset counting mask = 2 cycles
@@ -304,7 +308,7 @@ rv32i_core.sv: (M)
 DERIVED from the above. Delete: instr_in, data_in, if_fault, data_fault, instr_valid, data_valid, if_addr, data_addr, data_out, write_en, req_bytes, data_req_start
 Add (external, to mem.sv): if_araddr, if_arvalid, if_arready, if_rvalid, if_rready, if_rdata, if_rresp, data_awaddr, data_awvalid, data_awready, data_wdata, data_wstrb, data_wvalid, data_wready, data_bvalid, data_bready, data_bresp, data_araddr, data_arvalid, data_arready, data_rdata, data_rvalid, data_rready, data_rresp
 Keep: halt, instr_fault_out, data_fault_out, illegal_instr_out, stop, i_rx, o_tx
-Internal: a data decoder (LSU -> mmio_interface or the external port, selected by address bit 31) with the _out / _in wires
+Internal: data_decoder.sv (NEW file, LSU -> mmio_interface or the external port, selected by address bit 31) with the _out / _in wires, write_back.sv, the WB capture register, the sticky STOP / fault flags
 instr_fault_out was never driven (it assigned a non-existent name), it becomes the 1-bit if fault out of fetch
 top.sv: (CHANGED)
 connects the AXI ports of rv32i_core to mem.sv. The Verilator public signals used by sim_main.cpp change (if_addr, instr, data_addr, write_data, write_enable), the testbench is updated separately
@@ -312,7 +316,7 @@ connects the AXI ports of rv32i_core to mem.sv. The Verilator public signals use
 Open Items -
 > Unmapped MMIO address response (SLVERR vs reserved register reading 0), check the BIOS notes
 > bios.hex / bootloader.hex format for word-wide ROM / RAM
-> Halt / fault-cause design (latched per-cause flags, pipeline freeze until reset)
+> MMIO-readable fault-cause registers (not now, LEDs only), and a HALT LED
 > Slower slaves / cache: redirect_pending in fetch, one-entry read capture in the LSU, FIFO of selects in the decoders, dependent reads waiting for B
 > Whether MMIO stores should be posted too
 > Block RAM read/write collision between the instruction port and the data port when loading a program and jumping to it
