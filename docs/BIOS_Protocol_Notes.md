@@ -31,6 +31,8 @@
 
 > **NOTE:** The `--timeout` and `--retry` flags are purely client-side. The BIOS-side windows are fixed (ACK window above, `0x4000000` cycles (~6.7 seconds @ 10MHz) for every other byte read mid-command, converted with `UART_POLL_CYCLES` the same way).
 
+> **NOTE (simulation build):** The BIOS timeouts count CPU cycles, so in Verilator they would take hours of wall-clock time. `TIMEOUT_DIV` divides every BIOS timeout (default `1` = real timeouts, for the FPGA build). The simulation build uses `TIMEOUT_DIV=16`, which gives a mid-command timeout (and idle heartbeat) of ~4.2M cycles (~0.42 s simulated @ 10 MHz, about 400 byte-times at 9600 baud) and an ACK window of ~9.4M cycles (~0.94 s simulated). Assemble with `-Wa,--defsym,TIMEOUT_DIV=16` when going through the `gcc` driver, or `--defsym TIMEOUT_DIV=16` when calling `as` directly. The figures assume the current `UART_POLL_CYCLES` placeholder, so they move with it once it is measured.
+
 > **NOTE:** Connecting is not enforced by the BIOS, the connection bit is only set/cleared for bookkeeping and the idle loop accepts commands regardless of it (except in the limited POST-fail state, see POST).
 
 ### 2. POST
@@ -106,11 +108,11 @@
 - Host sends `0xCC` to run the loaded program (also reached internally by the `0xC0` load parameter). It takes no arguments, execution always starts at the last used program offset. If no program is validly loaded, BIOS responds with `0xEC` + `0x01` (Unverified) and goes back to idle.
 - BIOS saves its status registers (program size, BIOS status, program offset) into BIOS data space, applies the program telemetry settings to the hardware (enable bit, and a reset pulse if the reset setting is on), sets SP to `0x21000`, sets `ra` to the start of the tail and jumps to the program's start pointer.
 - Once the program runs into the inserted tail, BIOS restores its status registers, re-initializes its UART pointer and stack, restores its own telemetry setting to the hardware, and goes back to idle.
-- If register display was requested during load, the GPR values are sent first (see Register Display).
+- If register display was requested during load, the BIOS first sends the `0xF0` `0x2C` state update (Program Execution Finished) and then the GPR frame (see Register Display), before returning to idle (`0xF0` `0x00`).
 
 > **NOTE:** Control only returns to BIOS if the program actually reaches its last instruction. `ecall`/`ebreak` simply halt the CPU in place and a program stuck in a loop never returns either. A proper return path from those (e.g. reset line or trap) is planned but not yet implemented.
 
-> **NOTE:** If `0xCC` is sent without a validly loaded program (nothing loaded yet, a load that did not complete, or a self test since the last load), BIOS responds with `0xEC` + `0x01` and goes back to idle.
+> **NOTE:** If `0xCC` is sent without a validly loaded program (nothing loaded yet, a load that did not complete, or a self test since the last load), BIOS responds with `0xEC` + `0x01` and goes back to idle. The validity check happens before the `0xF0` `0x1C` state update, so no `0xF0` `0x1C` is sent in this case: the reply is the bare `0xEC` + `0x01`, followed by `0xF0` `0x00` once the BIOS is back in idle.
 
 ### 5. Telemetry
 > Primary function is to configure what telemetry is tracked, reset it, and report the counters
@@ -129,6 +131,8 @@
 - `0xE7` + `0x01` (Unverified): closing `0x7A` was not received within 4 parameters
 - `0xE7` + `0x02` (Invalid Parameter)
 - `0xE7` + `0x03` (Invalid Argument)
+
+> **NOTE:** Settings `0x71` and `0x72` share their storage with the program load flags (`0xC3`, `0xC4`), so every completed load overwrites them with its own values (off if not sent). Setting `0x70` is untouched by a load.
 
 **Status algorithm:**
 - Host sends `0x7D` to request the telemetry counters
@@ -168,6 +172,7 @@
 
 **Algorithm:**
 - Every time the BIOS changes state it sends `0xF0` followed by the state byte (see state list below)
+- State logging is **always on** and cannot be switched off from the host. There is no BIOS-side logging switch and no activation byte (a stray `0xFA` is just an unknown byte, `0xEF` + `0x02`). The console's `log` command only controls whether the updates are printed; the console keeps tracking the state either way, since it needs `0xF0` `0x00` (ready after an error), `0xF0` `0x1C` (program running) and `0xF0` `0x2C` (program finished).
 
 > **NOTE:** The BIOS re-enters idle (and so sends an idle state update) every time an idle read times out, so expect a repeating `0xF0 0x00` while logging is on and nothing is happening.
 
@@ -218,6 +223,7 @@ Options to be able to be configured:
 ### 3. Register Display
 > Dumps the 31 GPRs after a program completes, if it was requested during load.
 
+- Sent after the `0xF0` `0x2C` state update, so the host is already back in BIOS mode when the frame arrives. The BIOS returns to idle (`0xF0` `0x00`) once it is done.
 - Sends `0x75` (guard byte)
 - For each of x1 to x31 in order, sends the register number (`0x01`-`0x1F`), followed by its 4-byte value
 - Sends `0x75` (guard byte) again
@@ -352,7 +358,7 @@ Options to be able to be configured:
     - `0x05` - Unaligned Offset
     - `0x06` - Unaligned Size
 - `0xED` - Device Data Error *(defined, not currently used)*
-- `0xEE` - Critical Error (single byte, BIOS-side fault, followed by a BIOS reset)
+- `0xEE` - Critical Error (single byte, BIOS-side fault, followed by a BIOS reset, which also clears the telemetry settings and marks any loaded program invalid)
 - `0xEF` - BIOS Error
     - `0x01` - BIOS Timeout (a byte expected mid-command did not arrive in time)
     - `0x02` - Invalid Command (unknown byte received while idle, also in the limited POST-fail idle)
@@ -361,7 +367,7 @@ Options to be able to be configured:
 
 > **NOTE:** Timeouts while idle (waiting for a command byte) are silent. After any error or timeout the BIOS returns to idle (or the limited POST-fail idle if the last self test failed).
 
-> **NOTE:** After sending any error response (and after a mid-command timeout, `0xEF` + `0x01`) the BIOS waits until its UART receiver has been quiet for 5 byte-times (50 bit times, ~5.2 ms @ 9600 baud) before returning to idle. It reads and discards every byte that arrives in that time (each received byte restarts the wait) and sends nothing. The console should therefore stop transmitting and flush its queued bytes as soon as it sees an error byte pair, and stay silent for at least that long before the next command. A host that only resumes after the cooldown has ended is not protected, its remaining bytes would be read as new commands.
+> **NOTE:** After sending any error response (and after a mid-command timeout, `0xEF` + `0x01` or `0xEA` + `0x02`) the BIOS waits until its UART receiver has been quiet for 5 byte-times (50 bit times, ~5.2 ms @ 9600 baud) before returning to idle. It reads and discards every byte that arrives in that time (each received byte restarts the wait) and sends nothing. The console should therefore stop transmitting and flush its queued bytes as soon as it sees an error byte pair, and stay silent for at least that long before the next command. A host that only resumes after the cooldown has ended is not protected, its remaining bytes would be read as new commands.
 
 ---
 
@@ -369,36 +375,51 @@ Options to be able to be configured:
 
 > **NOTE:** BIOS-interfacing commands only function while the CPU is idle in BIOS mode, since command bytes sent over UART are not processed while a program is executing (the CPU does not implement interrupts). Control returns to BIOS once the program reaches its end (see Program Run). Purely client-side commands (e.g. `clear`, toggling `monitor`/`log` locally, `help`, listing a pending `sendbytes` queue) still work regardless of CPU state. `monitor`, if enabled, will only show activity during execution if the running program itself chooses to transmit over UART.
 
+## Profiles
+
+The console has two profiles, selected with `switch`. Everything profile dependent (transport, timeouts, cooldown, pacing) comes from the active profile, and the values set with `config` are kept per profile.
+
+- **`sim`**: TCP to the Verilator bridge (data port, default `127.0.0.1:5555`, raw UART bytes only). Verilator free-runs, so the BIOS timeouts are in simulated time while the console works in wall-clock time. `sim_time_scale` is the number of wall-clock seconds per simulated second (default `1.0`, measure the simulation speed to set it, e.g. a 500 kHz simulation is `20`). All client side timeouts (response, idle, fallback timer, ready-signal cap) are multiplied by it, the cooldown floor stays at wall-clock time. The simulation expects a BIOS built with a short `TIMEOUT_DIV` (see Connection).
+- **`fpga`**: serial port, 9600 8N1, no flow control, real wall-clock timeouts, normal BIOS build.
+
+Response timeouts are additionally scaled with the expected transfer size (dump, verify, load read-back, device data and so on), so a large transfer does not time out while it is still arriving.
+
 ### `config`
-- Change client configuration settings for the current active profile.
+- Change client configuration settings for the current active profile. `config` on its own prints all settings of the active profile, `config <key> <value>` sets one.
+- Keys: `cooldown_ms` (default `500`), `sim_time_scale` (sim only, default `1.0`), `host` (sim only, default `127.0.0.1`), `port` (sim only, default `5555`), `reset_port` (sim only, default `5556`), `serial_port` (fpga only).
 
 ### `switch <sim | fpga>`
-- Switch the current mode between software simulation and FPGA mode. Note that specific configuration settings will change depending upon in.
+- Switch the current mode between software simulation and FPGA mode. Note that specific configuration settings will change depending upon it.
+- Only accepted while disconnected or idle. It closes the transport, clears the cached device state and leaves the console disconnected until `connect` (`net` first in sim).
 
 ### `reset`
-- Reset the CPU through a bridge side channel.
-- Simulation only.
+- Reset the CPU through the bridge side channel (simulation only). On the FPGA profile it only reminds you to press the board reset button.
+- Side channel protocol: the bridge listens on a second TCP port (`reset_port`, default `5556`). The console sends the line `RESET\n`, the bridge pulses `rst_n` for a few cycles and answers `OK\n`.
+- On `OK` the console clears its cached state and goes back to disconnected, with the data socket still open. Run `connect` afterwards, the BIOS boot output (`0x50`, `0xF0` `0x00`) is swallowed.
+- Works whenever the prompt accepts input (idle, while a program is running, even when disconnected), as long as the side channel is reachable. It is the way out of a program that never returns.
 
-### `net` 
-- Connect to Verilator bridge via TCP
-- Simulation only.
+### `net [host:port]`
+- Connect to the Verilator bridge via TCP (data port). Defaults to the configured `host` and `port` (`127.0.0.1:5555`).
+- Simulation only, accepted while disconnected. It only opens the socket, `connect` then performs the handshake.
 
 ### `scan`
 - Gives the available port names, including that the FPGA may be connected to.
 - FPGA only.
 
-### `connect <PORTNAME> --timeout=TIME --retry=TIME`
+### `connect [PORTNAME] --timeout=TIME --retry=TIME`
 - Connects with the available port and returns the result if connected properly. If connection fails, the terminal will print the error as so.
 - Upon the first successful connection after a self test, the BIOS will send a message giving the POST status and whether it succeeded or failed, along with the result of each individual test.
 - The `--timeout` flag sets how long (in seconds) the tool waits for a SYN-ACK before considering the connection attempt failed.
 - The `--retry` flag, if set, automatically re-attempts the connection every `TIME` seconds following a failed or timed-out attempt.
 - If the BIOS is in the limited POST-fail state, connecting and `selftest` are the only things that work.
+- `PORTNAME` is used by the fpga profile (falls back to the `serial_port` setting). In the sim profile there is no port name, run `net` first.
 
 ### `load <filename.bin | filename.hex> -r -v --offset=START_ADDRESS --telemode=<true/false> --telereset=<true/false> --register=<true/false>`
 - Load a compiled binary into the CPU's RAM via the bootloader.
 - The input filename can be in either `.bin` or `.hex`, but must be assembled first before loading into the CPU. The file path can be given too, and may be provided in quotes.
+- `.bin` files are raw bytes. `.hex` files are `$readmemh`-style text: whitespace separated hex tokens, with `//` comments and `@address` lines tolerated (address lines are ignored, the data is always loaded from `--offset`). A file is accepted only if every token is 2 hex digits (bytes, in order) or every token is 8 hex digits (32-bit words, stored little endian). `objcopy -O verilog` gives the byte form, adding `--verilog-data-width=4` gives the word form.
 - The `-r` flag (run) indicates that the program will be directly executed by the CPU after being loaded.
-- The `-v` flag (verify) first verifies the program bytes (read back) to the console (little endian) before execution.
+- The `-v` flag (verify) first verifies the program bytes (read back) to the console (little endian) before execution. The console also compares the read-back with the image it sent (including the zero padding) and reports PASS, or the first mismatching offset.
 - The `--offset` flag gives the bootloader the start address of the program from where it will be loaded. By default, it's the beginning address of the RAM (`0x2000`), and the input value must be higher than it and a multiple of 4. It can either be in binary or hex (with a `0x` prefix). The BIOS checks the bounds, alignment and size itself (see Bootloader), the console should still catch these first.
 - The `--telemode` flag enables or disables telemetry tracking during program execution. True by default.
 - The `--telereset` flag enables or disables telemetry reset before the program executes. True by default (meaning it does reset). This is independent of `selftest` — running a self-test does not itself reset telemetry data unless `--telereset` separately causes it to.
@@ -423,18 +444,19 @@ Options to be able to be configured:
 ### `telemetry --mode=<true/false> --reset=<true/false> -r`
 - Modifies current telemetry tracking settings.
 - No arguments displays the current settings.
-- The `--mode` flag can be used to modifying if telemetry tracking starts now or not.
-- The `--reset` flag can be used to modify if telemetry data is reset every time a program starts.
-- The `-r` flag, if used, resets telemetry data instantly.
+- The `--mode` flag turns BIOS (continuous) telemetry tracking on or off (`0x70`), i.e. whether tracking starts now or not.
+- The `--reset` flag modifies if telemetry data is reset every time a program starts (`0x72`).
+- The `-r` flag, if used, resets telemetry data instantly (`0x73`).
+- Program telemetry tracking (`0x71`) is not set by this command, only by `load --telemode` (see the note in Telemetry).
 
 ### `monitor <(on/off) | (true/false)>`
 - Monitors all bytes that the UART transmitter of the CPU sends to the console's device if true. False (off) by default.
 - Not specifying an argument gives the current status.
 
 ### `log <(on/off) | (true/false)>`
-- Logs the BIOS state of a CPU and it's current action
+- Controls whether BIOS state updates (`[BIOS STATE]` lines) are printed. Client side only: the BIOS always sends them, there is no activation byte.
+- The console keeps tracking the BIOS state internally whether `log` is on or off.
 - Not specifying an argument gives the current status.
-- Activation Byte — `0xFA`
 
 ### `echo "message" -t`
 - Sends a message to the CPU when its in BIOS mode
@@ -463,30 +485,32 @@ Options to be able to be configured:
 - Updating the device state to the terminal allows the application to verify details about the CPU from the get-go before running the command and transmitting it to the CPU.
 
 ### `sendbyte [byte]`
-- Sends a byte to the UART receiver of the CPU
+- Sends a byte to the UART receiver of the CPU. Accepted whenever the prompt accepts input, regardless of BIOS or program state (a transport has to be open). The byte is queued for the writer and the prompt returns immediately.
 - `[byte]` should be replaced by the byte value in hex (eg. `0x1F`) or in decimal (eg. `31`)
 
 ### `sendbytes --bytes=[byte0, byte1, byte2, ...] --interval=INTERVAL`
 - Sends an array of bytes over to the UART receiver of the CPU
 - `[byte0, byte1, byte2, ...]` should be replaced with the array of actual bytes. It must be done with the `--bytes` flag.
-- Omitting the bytes flag will list the bytes serially left to be transmitted from a previous usage of the command.
+- Omitting the bytes flag will list the bytes serially left to be transmitted from a previous usage of the command. Like `sendbyte`, it is accepted regardless of BIOS or program state and the prompt returns immediately while the bytes go out in the background.
+- Bytes sent while the BIOS is idle are interpreted by the BIOS as commands, which is useful for testing its error handling.
 - The `--interval` flag specifies the intervals between the byte transmissions in terms of 10 baud ticks (for example, an interval of 3 would mean one byte transmission every 30 baud ticks).
 
 ### `status -r [-t | --telemetry=[instr, stall, stallpcnt, loaduse, brflush]]`
 - Gets status about the CPU and its recorded data.
 - *(NOTE: REMOVED FOR THE CURRENT VERSION SO IGNORE)* The `-r` flag gives the stored register data about the CPU. The BIOS has no request byte for this, the GPRs are only sent once after a program completes when it was loaded with `--register=true` (see Register Display).
 - The `-t` flag gives the currently stored telemetry data of the CPU (request byte `0x7D`). Alternatively, the `--telemetry` flag can be used to fetch specified metrics about CPI.
-- **NOTE:** `cpi` and `stallpcnt` are derived values computed client-side by the CLI from the raw telemetry metrics reported by the BIOS — they are not raw BIOS telemetry codes themselves. `cpi` is to be implemented in a later version when `cycles` is implemented.
+- **NOTE:** `cpi` and `stallpcnt` are derived values computed client-side by the CLI from the raw telemetry metrics reported by the BIOS — they are not raw BIOS telemetry codes themselves. `cpi` is to be implemented in a later version when `cycles` is implemented. `stallpcnt` is the stall count divided by the instruction count, times 100 (stalls per 100 instructions).
 - **NOTE (TBD):** The BIOS does not currently send the clock cycle count, so `cycles` (and anything derived from it) can't be filled from BIOS data yet.
 
 ### `selftest`
 - Performs a voluntary self test of the CPU once again to verify functionality. Please note that this will clear registers and overwrite program space, which may corrupt loaded programs.
 - The results are displayed in the same format as the one after the first connection.
 
-### `hexdump --offset=START_ADDRESS --size=BYTE_COUNT -v`
+### `hexdump --offset=START_ADDRESS --size=BYTE_COUNT`
 - Dumps the entire hex of the program in bytes from a given address.
 - The `--offset` parameter is the start address from where the hex dump will begin. It is a mandatory parameter.
 - The `--size` parameter is the number of bytes from the offset that the hex dump will print. It is a mandatory parameter.
+- Output is printed as rows of offset, hex bytes and an ASCII column, with a progress readout while the bytes of a larger dump arrive.
 - If the offset is invalid, or `BYTE COUNT` goes out of bounds, the program will refuse to print the bytes.
 - The BIOS can only dump up to the end of BIOS data space (`0x21FBF`), the BIOS stack and MMIO region are out of bounds. A size of `0` is rejected too.
 - A valid dump starts with `0x8C`, an out of bounds one is the bare `0xE8` + `0x01`.
@@ -499,3 +523,6 @@ Options to be able to be configured:
 
 ### `github`
 - Gives the GitHub repository link for the project.
+
+### `exit` / `quit`
+- Leaves the console (client side only). `Ctrl+C` at the prompt only clears the current input line, a running command cannot be aborted because the CPU has no interrupts.
