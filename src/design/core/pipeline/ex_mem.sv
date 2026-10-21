@@ -14,7 +14,7 @@ module ex_mem ( // 77 bits
     input logic [2:0] i_funct3,   // 3 bits
     input logic i_reg_write,      // 1 bit
     input logic i_mem_to_reg,     // 1 bit
-    input logic i_valid_instr,    // 1 bit
+    input logic i_is_stop,        // 1 bit
 
     output Word o_rs2_val,
     output RegAddr o_rd_addr,
@@ -24,11 +24,11 @@ module ex_mem ( // 77 bits
     output logic [2:0] o_funct3,
     output logic o_reg_write,
     output logic o_mem_to_reg,
-    output logic o_valid_instr
+    output logic o_is_stop        // replaces o_valid_instr
 );
 
     always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n || clear) begin
+        if (!rst_n) begin   // async reset split from the synchronous clear (was `!rst_n || clear`, a sim/synthesis mismatch)
             o_rs2_val       <= '0;
             o_rd_addr       <= '0;
             o_result        <= '0;
@@ -37,7 +37,17 @@ module ex_mem ( // 77 bits
             o_funct3        <= '0;
             o_reg_write     <= '0;
             o_mem_to_reg    <= '0;
-            o_valid_instr   <= '0;
+            o_is_stop       <= '0;
+        end else if (clear) begin   // synchronous clear, now its own branch
+            o_rs2_val       <= '0;
+            o_rd_addr       <= '0;
+            o_result        <= '0;
+            o_mem_read      <= '0;
+            o_mem_write     <= '0;
+            o_funct3        <= '0;
+            o_reg_write     <= '0;
+            o_mem_to_reg    <= '0;
+            o_is_stop       <= '0;
         end else if (!stall) begin  // do normal logic if NOT a stall
             o_rs2_val       <= i_rs2_val;
             o_rd_addr       <= i_rd_addr;
@@ -47,7 +57,7 @@ module ex_mem ( // 77 bits
             o_funct3        <= i_funct3;
             o_reg_write     <= i_reg_write;
             o_mem_to_reg    <= i_mem_to_reg;
-            o_valid_instr   <= i_valid_instr;
+            o_is_stop       <= i_is_stop;   // replaces o_valid_instr
         end
     end
 

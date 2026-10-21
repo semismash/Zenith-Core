@@ -1,6 +1,6 @@
 import rv32i::*;
 
-module id_ex (  // 161 bits
+module id_ex (  // 163 bits
     input logic clk,
     input logic rst_n,  // asynchronous active low reset
     input logic stall,
@@ -28,7 +28,9 @@ module id_ex (  // 161 bits
     input logic i_reg_write,      // 1 bit
     input logic i_imm_to_reg,     // 1 bit
     input logic i_mem_to_reg,     // 1 bit
-    input logic i_valid_instr,    // 1 bit
+    input logic i_is_stop,        // 1 bit
+    input logic i_illegal,        // 1 bit
+    input logic i_if_fault,       // 1 bit
 
     output OpCode o_opcode,
     output Word o_pc,
@@ -52,12 +54,14 @@ module id_ex (  // 161 bits
     output logic o_reg_write,
     output logic o_imm_to_reg,
     output logic o_mem_to_reg,
-    output logic o_valid_instr
+    output logic o_is_stop,       
+    output logic o_illegal,
+    output logic o_if_fault
 );
 
     always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n || clear) begin
-            o_opcode       <= OP_NOP;
+        if (!rst_n) begin   // async reset split from the synchronous clear
+            o_opcode       <= OP_I;    // bubble opcode canonical NOP
             o_pc           <= '0;
             o_rs1_addr     <= '0;
             o_rs2_addr     <= '0;
@@ -66,7 +70,7 @@ module id_ex (  // 161 bits
             o_rs2_data     <= '0;
             o_imm_val      <= '0;
             o_alu_in1_ropc <= '0;
-            o_alu_in2_roi  <= '0;
+            o_alu_in2_roi  <= 1'b1;    // NOP takes ALU in2 from imm, same as the decoder's output for addi
             o_alu_op       <= ADD;    // add by default
             o_alu_bypass   <= '0;
             o_mem_read     <= '0;
@@ -79,7 +83,35 @@ module id_ex (  // 161 bits
             o_reg_write    <= '0;
             o_imm_to_reg   <= '0;
             o_mem_to_reg   <= '0;
-            o_valid_instr  <= '0;
+            o_is_stop      <= '0;    
+            o_illegal      <= '0;    
+            o_if_fault     <= '0;    
+        end else if (clear) begin   // synchronous clear (flush / load-use bubble / stop squash), now its own branch
+            o_opcode       <= OP_I;   
+            o_pc           <= '0;     
+            o_rs1_addr     <= '0;     
+            o_rs2_addr     <= '0;     
+            o_rd_addr      <= '0;     
+            o_rs1_data     <= '0;     
+            o_rs2_data     <= '0;     
+            o_imm_val      <= '0;     
+            o_alu_in1_ropc <= '0;     
+            o_alu_in2_roi  <= 1'b1;   
+            o_alu_op       <= ADD;    
+            o_alu_bypass   <= '0;     
+            o_mem_read     <= '0;     
+            o_mem_write    <= '0;     
+            o_funct3       <= '0;     
+            o_pc_in1_sel   <= '0;     
+            o_is_branch    <= '0;     
+            o_is_jal       <= '0;     
+            o_is_jalr      <= '0;     
+            o_reg_write    <= '0;     
+            o_imm_to_reg   <= '0;     
+            o_mem_to_reg   <= '0;     
+            o_is_stop      <= '0;     
+            o_illegal      <= '0;     
+            o_if_fault     <= '0;     
         end else if (!stall) begin  // do normal logic if NOT a stall
             o_opcode       <= i_opcode;
             o_pc           <= i_pc;
@@ -103,7 +135,9 @@ module id_ex (  // 161 bits
             o_reg_write    <= i_reg_write;
             o_imm_to_reg   <= i_imm_to_reg;
             o_mem_to_reg   <= i_mem_to_reg;
-            o_valid_instr  <= i_valid_instr;
+            o_is_stop      <= i_is_stop;
+            o_illegal      <= i_illegal;
+            o_if_fault     <= i_if_fault;
         end
     end
 
