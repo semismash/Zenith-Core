@@ -228,17 +228,17 @@ Naming: prefix if_ for the instruction port and data_ for the data port, followe
 
 fetch.sv: (M)
 mem_fetch_addr -> (RENAME) if_araddr
-(NEW) if_arvalid (NOT the same as fetch_valid. fetch_valid is response side, "an instruction is delivered to IF/ID this cycle". if_arvalid is a new request side output, so both stay)
-(NEW) if_arready (in)
+if_arvalid (NOT the same as fetch_valid. fetch_valid is response side, "an instruction is delivered to IF/ID this cycle". if_arvalid is a new request side output, so both stay)
+if_arready (in)
 instr_valid -> (RENAME) if_rvalid (in)
 instr_in -> (RENAME) if_rdata (in)
 is_not_found -> (RENAME & WIDEN) if_rresp [1:0] (in)
-(NEW) if_rready (out, constant 1)
+if_rready (out, constant 1)
 mem_fault -> KEEP (1-bit out to the core, = if_rresp[1] | misaligned, carried through IF/ID like today)
 fetch_valid -> KEEP, new meaning (instruction delivered this cycle). No longer needed by the stall logic
 pc_in -> DELETE (request PC register moves into fetch)
-(NEW) redirect (in, = branch_taken)
-(NEW) redirect_pc (in, from pc.sv)
+redirect (in, = branch_taken)
+redirect_pc (in, from pc.sv)
 stall -> KEEP (IF/ID frozen)
 pc_out -> KEEP (PC of the instruction being delivered, from ar_fifo)
 instr_out -> KEEP (NOP_INSTR when nothing is delivered)
@@ -250,25 +250,25 @@ clk, rst_n, pc_enable, pc_out -> DELETE
 (exact port trimming to be done while patching the file)
 lsu.sv: (M)
 mem_addr -> (RENAME) data_araddr
-(NEW) data_awaddr (same ALU address, only the valid decides which channel is used)
+data_awaddr (same ALU address, only the valid decides which channel is used)
 mem_req_start -> (RENAME) data_arvalid
-(NEW) data_awvalid
-(NEW) data_wvalid
-(NEW) data_arready, data_awready, data_wready (in)
+data_awvalid
+data_wvalid
+data_arready, data_awready, data_wready (in)
 write_enable -> DELETE
 data_in -> (RENAME) data_rdata (in, goes to write_back.sv; the LSU no longer forms the load result)
 mem_valid -> DELETE, replaced by data_rvalid (in) and data_bvalid (in)
-(NEW) data_rresp [1:0] (in)
-(NEW) data_bresp [1:0] (in)
-(NEW) data_rready (out, constant 1)
-(NEW) data_bready (out, constant 1)
+data_rresp [1:0] (in)
+data_bresp [1:0] (in)
+data_rready (out, constant 1)
+data_bready (out, constant 1)
 write_data -> (RENAME) data_wdata
 req_bytes -> (RENAME) data_wstrb [3:0] (computed, see Considerations)
 reg_data -> DELETE (load extraction and the mem_to_reg mux move to write_back.sv)
 mem_to_reg -> DELETE from the LSU (used in WB)
 mmio_data, mmio_access -> DELETE (MMIO now sits behind the decoder in rv32i_core)
 mem_stage_busy -> KEEP (this goes to hazard unit for stalling, not memory)
-(NEW) data_fault (out, 1 bit): precheck fault | R with rresp[1] | B with bresp[1]
+data_fault (out, 1 bit): precheck fault | R with rresp[1] | B with bresp[1]
 funct3, alu_res, is_mem_read, is_mem_write, rs2_in -> KEEP
 write_back.sv: (CHANGED, currently unused, gets revived)
 inputs: funct3, addr_lo [1:0], mem_to_reg, result (ALU / PC+4 value carried in MEM/WB), data_rdata, data_rresp [1:0]
@@ -278,10 +278,10 @@ mem_wb.sv: (CHANGED)
 carries result, mem_to_reg, funct3 (3 bits), addr_lo (2 bits), is_stop instead of the already-formed rd_data and valid_instr
 hazard_unit.sv / stall_unit.sv: (CHANGED)
 instr_fetch_valid -> DELETE (fetch inserts bubbles instead)
-(NEW) wb_data_wait (in) -> freeze every stage
-(NEW) freeze (in, sticky STOP / HALT) -> freeze every stage
-(NEW) stop_in_flight (in) -> squash the ID instruction
-(NEW) meta_is_instr (out) -> instruction counter pulse
+wb_data_wait (in) -> freeze every stage
+freeze (in, sticky STOP / HALT) -> freeze every stage
+stop_in_flight (in) -> squash the ID instruction
+meta_is_instr (out) -> instruction counter pulse
 data_fetch_valid -> KEEP (= !mem_stage_busy)
 meta.sv: (CHANGED)
 post-reset counting mask = 2 cycles
@@ -297,11 +297,11 @@ storage -> 32-bit words with byte write enables from data_wstrb (replaces the By
 rresp / bresp are always OKAY
 rom.sv: (S)
 same as ram.sv, but both ports are read-only. Any write on the data port is answered with SLVERR and nothing is written
-default_slave.sv: (S, NEW)
+default_slave.sv:
 read + write channel slave, always accepts, always answers DECERR (rdata = 0). One instance per side inside mem.sv
 mmio_interface.sv: (S)
 mmio_data_addr, req_bytes, write_enable, mmio_data_in, mem_req_start, mmio_data_out, mmio_data_ready -> DELETE
-(NEW) data_awaddr, data_awvalid, data_awready, data_wdata, data_wstrb, data_wvalid, data_wready, data_bvalid, data_bready, data_bresp, data_araddr, data_arvalid, data_arready, data_rdata, data_rvalid, data_rready, data_rresp
+data_awaddr, data_awvalid, data_awready, data_wdata, data_wstrb, data_wvalid, data_wready, data_bvalid, data_bready, data_bresp, data_araddr, data_arvalid, data_arready, data_rdata, data_rvalid, data_rready, data_rresp
 UART / META ports (uart_rx_data, uart_tx_data, meta_enable, meta_clear, meta_*_count, ...) -> KEEP
 MMIOAddress enum -> unchanged addresses (later: move it into the package instead of file scope)
 rv32i_core.sv: (M)
