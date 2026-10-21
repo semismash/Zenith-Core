@@ -30,8 +30,6 @@
 .equ TB_PRG_RUN,     0xCC
 # DEVICE DATA
 .equ TB_DD_DATA,     0xDA
-# BIOS DATA MONITORING
-.equ TB_BIOS_DATA,   0xFA
 
 # FROM BIOS
 .equ FB_MSG_ECHO,    0x3A
@@ -85,9 +83,6 @@
     .equ DD_PARAM_ROMOFS,    0x09
     .equ DD_PARAM_ROMSZ,     0x0A
 # BIOS STATE MONITORING
-.equ FB_BIOSST_LOG,  0xFA
-    .equ BIOSST_LOG_OFF, 0x00
-    .equ BIOSST_LOG_ON,  0x01
 .equ FB_BIOSST_UPDT, 0xF0
     .equ BIOSST_IDLE,    0x00
     .equ BIOSST_MSG,     0x03
@@ -97,9 +92,9 @@
     .equ BIOSST_NET,     0x0A
     .equ BIOSST_PGLD,    0x0C
     .equ BIOSST_PGEX,    0x1C
+    .equ BIOSST_PGDN,    0x2C  # program execution is complete, short state between idle transition
     .equ BIOSST_DD,      0x0D
     .equ BIOSST_ERR,     0x0E
-    .equ BIOSST_LOG_ST,  0x0F
     .equ BIOSST_STFIDL,  0x50  # limited POST-fail idle state (connection only)
 
 # BIOS ERRORS (INTERNAL AND EXTERNAL)
@@ -128,5 +123,4 @@
 .equ ERR_CRITICAL,       0xEE   
 .equ ERR_BIOS,           0xEF
     .equ ERR_BIOS_TIMEOUT,          0x01
-    .equ ERR_BIOS_ARG_INVALID,      0x02
-    .equ ERR_BIOS_INV_CMD,          0x03
+    .equ ERR_BIOS_INV_CMD,          0x02

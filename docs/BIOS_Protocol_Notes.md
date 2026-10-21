@@ -45,7 +45,7 @@
   - `0x03` Memory: word writes/reads at `0x2000`, `0x9000`, `0x11000` and `0x20FFC`, plus a byte and a halfword access
   - `0x04` Stack: pushes 3 words, pops them back in order, verifies SP returned to its start
   - `0x05` UART: transmits the test byte `0x50` (transmit only, no loopback verification)
-- POST passes only if all 6 tests pass. Otherwise, the BIOS enters a limited idle state (state `0x50`) where the only commands serviced are connection (`0xAA`) and self test (`0x5A`), all other bytes get `0xEF` + `0x03` (Invalid Command).
+- POST passes only if all 6 tests pass. Otherwise, the BIOS enters a limited idle state (state `0x50`) where the only commands serviced are connection (`0xAA`) and self test (`0x5A`), all other bytes get `0xEF` + `0x02` (Invalid Command).
 - Print message to screen (from BIOS itself) on first connection, see format below
 
 **POST result transmission (BIOS to host):**
@@ -167,10 +167,7 @@
 > Primary function is to let the host track what the BIOS is currently doing
 
 **Algorithm:**
-- Host sends `0xFA`, followed by `0x01` (on) or `0x00` (off)
-- BIOS acknowledges with `0xFA` followed by the new state (`0x01` or `0x00`)
-- Any other argument responds with `0xEF` + sub-code `0x02` (Invalid Argument)
-- While on, every time the BIOS changes state it sends `0xF0` followed by the state byte (see state list below)
+- Every time the BIOS changes state it sends `0xF0` followed by the state byte (see state list below)
 
 > **NOTE:** The BIOS re-enters idle (and so sends an idle state update) every time an idle read times out, so expect a repeating `0xF0 0x00` while logging is on and nothing is happening.
 
@@ -272,7 +269,6 @@ Options to be able to be configured:
 - `0xCB` - Program Verify (read back the loaded program)
 - `0xCC` - Program Run
 - `0xDA` - Device Data
-- `0xFA` - BIOS Data Monitoring (followed by `0x00` off / `0x01` on)
 
 ### Output (from BIOS)
 
@@ -314,7 +310,6 @@ Options to be able to be configured:
     - `0x08` - Program Size
     - `0x09` - ROM Offset
     - `0x0A` - ROM Size
-- `0xFA` - BIOS Data Monitoring acknowledgement (followed by `0x00`/`0x01`)
 - `0xF0` - Current BIOS State Update (followed by state)
     - `0x00` - Idle
     - `0x03` - Message Display
@@ -324,9 +319,9 @@ Options to be able to be configured:
     - `0x0A` - Connection Attempt
     - `0x0C` - Program Load
     - `0x1C` - Program Execution
+    - `0x2C` - Program Execution Finished
     - `0x0D` - Device Data Display
     - `0x0E` - Error *(defined, not currently used)*
-    - `0x0F` - BIOS Log Toggle
     - `0x50` - Limited POST-fail Idle (connection only)
 
 > **NOTE:** Defined in `protocol.inc` but not currently transmitted: `0x7A`, `0x7F`, `0x70`/`0x71` as telemetry display prefixes, `0x8A` (memory dump header), `0xCC` (program run begin), `0xD1` (device info parameter prefix). Device data parameters are sent without them. Memory dump and program verify use `0x8C` instead of `0x8A`.
@@ -360,14 +355,13 @@ Options to be able to be configured:
 - `0xEE` - Critical Error (single byte, BIOS-side fault, followed by a BIOS reset)
 - `0xEF` - BIOS Error
     - `0x01` - BIOS Timeout (a byte expected mid-command did not arrive in time)
-    - `0x02` - Invalid Argument (BIOS data monitoring)
-    - `0x03` - Invalid Command (unknown byte received while idle, also in the limited POST-fail idle)
+    - `0x02` - Invalid Command (unknown byte received while idle, also in the limited POST-fail idle)
 
 > **NOTE:** Please note that errors are raised when something goes wrong with the functioning of the BIOS or an unexpected deviation from expected control flow, not necessarily when returning the result of the specific operation.
 
 > **NOTE:** Timeouts while idle (waiting for a command byte) are silent. After any error or timeout the BIOS returns to idle (or the limited POST-fail idle if the last self test failed).
 
-> **NOTE:** After sending any error response (and after a mid-command timeout, `0xEF` + `0x01` or `0xEA` + `0x02`) the BIOS waits until its UART receiver has been quiet for 5 byte-times (50 bit times, ~5.2 ms @ 9600 baud) before returning to idle. It reads and discards every byte that arrives in that time (each received byte restarts the wait) and sends nothing. The console should therefore stop transmitting and flush its queued bytes as soon as it sees an error byte pair, and stay silent for at least that long before the next command. A host that only resumes after the cooldown has ended is not protected, its remaining bytes would be read as new commands.
+> **NOTE:** After sending any error response (and after a mid-command timeout, `0xEF` + `0x01`) the BIOS waits until its UART receiver has been quiet for 5 byte-times (50 bit times, ~5.2 ms @ 9600 baud) before returning to idle. It reads and discards every byte that arrives in that time (each received byte restarts the wait) and sends nothing. The console should therefore stop transmitting and flush its queued bytes as soon as it sees an error byte pair, and stay silent for at least that long before the next command. A host that only resumes after the cooldown has ended is not protected, its remaining bytes would be read as new commands.
 
 ---
 

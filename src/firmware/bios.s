@@ -57,7 +57,7 @@
     # s10 - BIOS Status Register
         # [7:0]: BIOS Status Byte
         # [8]: BIOS Connection Valid
-        # [9]: BIOS Status Flush (State logging)
+        # [9]: BIOS Status Flush (State logging) -> NOTE: THIS BIT IS NOW UNUSED. BIOS WILL ALWAYS UPDATE STATUS REGARDLESS.
         # [10]: BIOS Telemetry Enable
         # [11]: Program Telemetry Enable
         # [12]: Program Telemetry Reset
@@ -547,8 +547,6 @@ idle:
     beq     t0, t1, program_verify
     li      t1, TB_DD_DATA          # check device data request
     beq     t0, t1, device_data
-    li      t1, TB_BIOS_DATA        # check if BIOS data monitoring is turned on
-    beq     t0, t1, bios_log
 
     li      a0, ERR_BIOS            # unknown command byte -> EF 03
     li      a1, ERR_BIOS_INV_CMD
@@ -1110,36 +1108,7 @@ device_data:
 
     j       idle
 
-bios_log:
-    li      a6, BIOSST_LOG_ST
-    call    update_state    # update state
-
-    rx                      # get byte indicating on (0x01) or off (0x00) for tracking
-    beqz    a0, 1f          # jump to switch off logic
-    addi    a0, a0, -1      # subtract 1 to check if equal to zero
-    beqz    a0, 2f          # jump to switch on logic
-    li      a0, ERR_BIOS
-    li      a1, ERR_BIOS_ARG_INVALID    # invalid option (didnt select from 0x00 or 0x01)
-    j       error_handler
-1:
-    li      t0, 0xFFFFFDFF           
-    and     s10, s10, t0             # mask to reset 9th bit (bios state update)
-    li      a0, FB_BIOSST_LOG        # acknowledgement sent to master device
-    tx                               
-    li      a0, BIOSST_LOG_OFF
-    tx                               
-    j       idle
-2:
-    ori     s10, s10, 0x00000200     # mask to set 9th bit (bios state update)
-    li      a0, FB_BIOSST_LOG        # acknowledgement sent to master device
-    tx                               
-    li      a0, BIOSST_LOG_ON
-    tx                               
-    j       idle
-
 program_run:
-    li      a6, BIOSST_PGEX
-    call    update_state    # update state
     li      t0, PRG_VALID_BIT
     and     t0, s10, t0
     beqz    t0, program_unverified      # nothing (or only part of a program) loaded -> EC 01
@@ -1174,6 +1143,8 @@ program_run:
     sb      t3, 0(t2)       # deassert reset bit
 
 3:
+    li      a6, BIOSST_PGEX             # CRUCIAL
+    call    update_state                # update state
     li      sp, PROGRAM_TOP             # now 0x21000 # set up stack pointer at top of the program space (0x20000)
     add     ra, s11, s9                 # ra = the tail's lui, so a program ending in `ret` also returns to the BIOS
     jr      s11                         # jump to program start offset
@@ -1184,6 +1155,9 @@ program_unverified:                     # shared by program_run and program_veri
 
 # <---------- NOTE: The below two functions were initially written with the help of AI, but were thoroughly reviewed a human. ---------->
 jump_back:    #  default post-execution return target (no register display); restores BIOS's own s9/s10/s11, reinitializes s1 and sp, then returns to idle
+    li      a6, BIOSST_PGDN          #  CRUCIAL: send BIOS PG_DN byte as a first transmission so CLI knows program execution is complete and can update its internal mode from program mode back the BIOS mode to start working again 
+    call    update_state
+
     li      t0, PROGRAM_TOP          #  these were saved here by program_run before execution began
     lw      s9, 4(t0)                #  restore program size register
     lw      s10, 8(t0)               #  restore BIOS status register
@@ -1228,6 +1202,9 @@ jump_back_reg_disp:    #  post-execution return target when register display was
     sw      t4,  112(t6)             #  x29
     sw      t5,  116(t6)             #  x30
     sw      zero, 120(t6)            #  x31 (t6) was used as the dump base pointer above, so its original value is lost; reported as 0
+
+    li      a6, BIOSST_PGDN          #  CRUCIAL: send BIOS PG_DN byte as a first transmission so CLI knows program execution is complete and can update its internal mode from program mode back the BIOS mode to start working again 
+    call    update_state             
 
     li      t0, PROGRAM_TOP          #  now safe to restore BIOS's own status registers (same as jump_back)
     lw      s9, 4(t0)                #  restore program size register
@@ -1333,15 +1310,12 @@ update_state:
     li      t0, 0xFFFFFF00
     and     s10, s10, t0
     or      s10, s10, a6    # load lower byte of a6 into s10 to update status
-    andi    t1, s10, 0x00000200     # mask out 9th bit (status flush)
-    beqz    t1, 1f          # if zero, then skip status flushing directly and return
     mv      t1, a0          # save existing return value (prevent return value loss from before)
     li      a0, FB_BIOSST_UPDT
     tx                      # update push update bios state 
     mv      a0, a6          # push updated state as byte
     tx
     mv      a0, t1
-1:
     ret
 
 mem_print:

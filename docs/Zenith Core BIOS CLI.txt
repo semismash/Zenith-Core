@@ -136,26 +136,32 @@ Command Analyzer limits - (from the 0xDA reply where it exists, constants otherw
 - Limited POST-fail state: only connect and selftest are accepted, everything else is refused client-side.
 - Only sendbyte / sendbytes while ProgramRunning.
 
-Suggested file structure (well, not structure, but suggested files so whatever, not incl. main.cpp and other scripts, not in order, subject to change) -
-1) shell.cpp/.hpp - Shell
-2) cmdparse.cpp/.hpp - Command Parser
-3) responseprint.cpp/.hpp - Response Printer
-4) client.cpp/.hpp - Session (state machine, generation counter, state cache, message buffer, response analyzer, cooldown). Replaces the old client / device_state / msg_buffer / rsp_analyze split. The read side needs no byte FIFO, the reader feeds bytes straight into on_byte.
-5) cmd_analyze.cpp/.hpp - Command analyzer
-6) bytegen.cpp/.hpp - Byte generator
-7) uart_module.cpp/.hpp - UART RX/TX module
-8) transport.hpp - Common transport interface (write, read(timeout), flush_tx, close) [DEPRECATED, all transport protocol specified in tcp_transport.hpp and srl_transport.hpp directly]
-9) tcp_transport.hpp - TCP Transport (sim)
-10) srl_transport.hpp - Serial Transport (fpga)
-11) profile.cpp/.hpp - Sim / FPGA profiles (see Profiles)
-12) commands.hpp - Commands (formats for parsing and analysis)
-13) responses.hpp - Responses (for analysis and printing to shell)
-14) error.hpp - Client side errors (Parsing, Sema, etc.)
-15) bios_error.hpp - Bios side errors
-16) codes.hpp - Same as protocol.inc, but in C++, GENERATED from protocol.inc by a small script (so the two can't drift)
-17) cli.cpp/.hpp - Top level CLI module
-18) config.cpp - CLI configuration (add YAML/TOML later???)
-19) Others - (for USB and serial connection, etc., TBA)
+Suggested file structure (well, not structure, but suggested files so whatever, not in order, subject to change during implementation) -
+(NOTE: My project is in ROOT/src/cli/. All the given paths below are relative to that.)
+1) src/shell/shell.cpp/.hpp - Shell
+2) src/shell/cmdparse.cpp/.hpp - Command Parser
+3) src/shell/responseprint.cpp/.hpp - Response Printer
+4) src/client/client.cpp/.hpp - Session (state machine, generation counter, state cache, message buffer, response analyzer, cooldown).
+5) src/client/cmd_analyze.cpp/.hpp - Command analyzer
+6) src/client/bytegen.cpp/.hpp - Byte generator
+7) src/interface/uart_module.cpp/.hpp - UART RX/TX module
+8) src/interface/transport.hpp - Common transport interface (write, read(timeout), flush_tx, close) [DEPRECATED, all transport protocol specified in tcp_transport.hpp and srl_transport.hpp directly]
+9) src/interface/tcp_transport.hpp - TCP Transport (sim)
+10) src/interface/srl_transport.hpp - Serial Transport (fpga)
+11) src/profile/profile.cpp/.hpp - Sim / FPGA profiles (see Profiles)
+12) src/headers/commands.hpp - Commands (formats for parsing and analysis)
+13) src/headers/responses.hpp - Responses (for analysis and printing to shell)
+14) src/headers/error.hpp - Client side errors (Parsing, Sema, etc.)
+15) src/headers/bios_error.hpp - Bios side errors
+16) src/headers/codes.hpp - Same as protocol.inc, but in C++, GENERATED from protocol.inc by a small script (so the two can't drift)
+17) src/cli.cpp/.hpp - Top level CLI module
+18) src/profile/config.cpp - CLI configuration (add YAML/TOML later to save config between sessions??? if so)
+19) src/main.cpp - Main file which runs the CLI
+20) lib/CLI11.hpp - CLI11 library header
+21) scripts/gen_codes.py - Convert protocol.inc to src/headers/codes.hpp
+22) tests/ - Empty folder, perhaps for tests but not decided.
+23) src/shell/messages.toml - Use this to store ALL input strings and output messages for the shell, such that they can be easily modified later. The C++ program pulls from these files and loads it during compilation, and displays these exact messages to the command line.
+24) Others - (for USB and serial connection, other library headers etc., you may add if required, but mention explicitly)
 
 Proposed libraries for use -
 1) cli11 - Command parsing. For the REPL, parse one line at a time, call app.clear() between lines, tokenize quoted strings yourself and parse numbers as strings (hex/binary with charconv).
@@ -178,4 +184,16 @@ New proposed commands (ALL are client side only) -
 2) switch <sim | fpga> - Switch between the simulation profile (TCP) and the FPGA profile (serial), including their timing, cooldown and pacing settings (see Profiles)
 3) net - Connect to the Verilator bridge via TCP (sim profile only)
 4) reset - Reset the simulated CPU through the bridge side channel (sim profile only, TBD)
-5) TBD
+5) Any others, if suggested
+
+IMPORTANT POINTS AND CAVEATS TO REMEMBER DURING IMPLEMENTATION -
+- The FB_MSG_FLSH (0x3F) byte incoming from the BIOS means to flush the internal buffer immediately and enter it.
+- FB_MSG_STR (and TB_MSG_STR) (0x3D byte) is kind of a universal protocol that determines that a string is being transmitted, which you can probably see in the files. If the client receives an FB_MSG_STR from the byte, followed by said message, store it in the client message buffer for use, but don't empty it. This can be used by stuff like Device Data display (as you may notice in the protocol when it transmits messages), so instead of requiring the flush immediately, you can store it internally in some kind of string variable, before all the data is received. AND, another thing - Make it so that if there is another string (0x3D byte) that is received by the rx Listener thread, then once the message is received, it clears the buffer autommatically and instead replaces it with this new message.
+- During program execution, all commands are locked except for sendbyte and sendbytes, which function as normal. In addition, all functionality is locked for the BIOS listener except, crucially, three functions - Monitor, Message display and Log BIOS state. Monitor is of course there to monitor all incoming bytes. Message display allows the BIOS to transmit, send, and flush messages, as the client will still accept 0x3D messages and 0x3F flush bytes with their normal functionality, which allows the BIOS to display potential responses to the terminal, directly. Log BIOS State is required as the CPU will send a BIOSST_UPDATE (0xF0), followed by BIOSST_PGDN (0x2C) once program execution finishes, as the CLI needs to know when program execution finishes to switch its internal state from PROGRAM MODE to BIOS MODE. In this case, even if log was off, the BIOS will still send these bytes, and while they need not be printed to the terminal like if log was on, since BIOS always sends its state upon log, it must be monitored closely. Make it so that BIOS MODE -> PROGRAM MODE transition happens when it receives BIOSST_UPDATE + BIOSST_PGEX, and PROGRAM_MODE -> BIOS_MODE transition happens when it receives BIOSST_UPDATE_PGDN. Also, please note that terminal commands can still be typed into the shell in PROGRAM MODE for the reasons I mentioned earlier, just that most of the commands (except the ones I mentioned) won't do anything.
+- No commands can be typed during 
+- Make sure the terminal uses this specific combination of markers for these specific operations -
+'>>' - Before user input, just to show that it's a user input that can be entered. Don't allow newlines for user input btw.
+'[BIOS STATE]' - Prefix before said BIOS State, if log is on, then print that first, followed by the current BIOS state, followed by a newline. You can use an internal variable to store the current BIOS state in the client.
+'[FROM BIOS]' - Prefix for any UART byte coming from BIOS when monitor is on, print that first, followed by the byte in hex, followed by a newline.
+No prefix marker if 0x3F is flushed to screen. Just print it directly. After flushing, no need to append a newline, newline is only appended if the string itself contains a newline at the end or smth. Null terminators in the string messages can be ignored.
+Anything else is open to interpretetation

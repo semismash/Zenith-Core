@@ -36,8 +36,6 @@ inline constexpr uint8_t TB_PRG_VERIFY = 0xCB;  // different from the verify arg
 inline constexpr uint8_t TB_PRG_RUN = 0xCC;
 // DEVICE DATA
 inline constexpr uint8_t TB_DD_DATA = 0xDA;
-// BIOS DATA MONITORING
-inline constexpr uint8_t TB_BIOS_DATA = 0xFA;
 
 // FROM BIOS
 inline constexpr uint8_t FB_MSG_ECHO = 0x3A;
@@ -91,9 +89,6 @@ inline constexpr uint8_t FB_DD_PARAM = 0xD1;
     inline constexpr uint8_t DD_PARAM_ROMOFS = 0x09;
     inline constexpr uint8_t DD_PARAM_ROMSZ = 0x0A;
 // BIOS STATE MONITORING
-inline constexpr uint8_t FB_BIOSST_LOG = 0xFA;
-    inline constexpr uint8_t BIOSST_LOG_OFF = 0x00;
-    inline constexpr uint8_t BIOSST_LOG_ON = 0x01;
 inline constexpr uint8_t FB_BIOSST_UPDT = 0xF0;
     inline constexpr uint8_t BIOSST_IDLE = 0x00;
     inline constexpr uint8_t BIOSST_MSG = 0x03;
@@ -103,9 +98,9 @@ inline constexpr uint8_t FB_BIOSST_UPDT = 0xF0;
     inline constexpr uint8_t BIOSST_NET = 0x0A;
     inline constexpr uint8_t BIOSST_PGLD = 0x0C;
     inline constexpr uint8_t BIOSST_PGEX = 0x1C;
+    inline constexpr uint8_t BIOSST_PGDN = 0x2C;  // program execution is complete, short state between idle transition
     inline constexpr uint8_t BIOSST_DD = 0x0D;
     inline constexpr uint8_t BIOSST_ERR = 0x0E;
-    inline constexpr uint8_t BIOSST_LOG_ST = 0x0F;
     inline constexpr uint8_t BIOSST_STFIDL = 0x50;  // limited POST-fail idle state (connection only)
 
 // BIOS ERRORS (INTERNAL AND EXTERNAL)
@@ -134,7 +129,6 @@ inline constexpr uint8_t ERR_DEVICE_DATA = 0xED;
 inline constexpr uint8_t ERR_CRITICAL = 0xEE;
 inline constexpr uint8_t ERR_BIOS = 0xEF;
     inline constexpr uint8_t ERR_BIOS_TIMEOUT = 0x01;
-    inline constexpr uint8_t ERR_BIOS_ARG_INVALID = 0x02;
-    inline constexpr uint8_t ERR_BIOS_INV_CMD = 0x03;
+    inline constexpr uint8_t ERR_BIOS_INV_CMD = 0x02;
 
 } // namespace bios_protocol
