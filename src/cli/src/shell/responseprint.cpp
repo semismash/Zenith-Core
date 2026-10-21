@@ -61,7 +61,7 @@ namespace print_mod {
 
     std::expected<void, std::string> Messages::load(std::string_view toml_text) {
         try {
-            const auto tbl = toml::parse(toml_text, "messages.toml");
+            const auto tbl = toml::parse(toml_text, std::string_view{"messages.toml"});
             table.clear();
             flatten(tbl, "", table);
         } catch (const toml::parse_error& err) {

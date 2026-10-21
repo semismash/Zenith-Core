@@ -249,12 +249,12 @@ int main(int argc, char** argv) {
     std::cout << "\n------------------- PERFORMANCE METRICS -------------------" << std::endl;
     std::cout << "Total Clock Cycles:       " << std::dec << cycles << std::endl;
 
-#ifdef HAVE_TELEMETRY
-    // needs MetaCount signals declared (public_flat_rw) in top.sv and hooked to the core, see notes
-    uint32_t total_retired_instr = r.top__DOT__meta_instr_count;
-    uint32_t total_stalls        = r.top__DOT__meta_stall_count;
-    uint32_t load_use_stalls     = r.top__DOT__meta_l_use_count;
-    uint32_t branch_flushes      = r.top__DOT__meta_br_flush_count;
+    // the counters live inside rv32i_core (u_meta) and only count while meta_enable is set (MMIO 0x80001000, bit 1),
+    // so they read 0 for programs that never switch telemetry on
+    uint32_t total_retired_instr = r.top__DOT__u_cpu__DOT__meta_instr_count;
+    uint32_t total_stalls        = r.top__DOT__u_cpu__DOT__meta_stall_count;
+    uint32_t load_use_stalls     = r.top__DOT__u_cpu__DOT__meta_l_use_count;
+    uint32_t branch_flushes      = r.top__DOT__u_cpu__DOT__meta_br_flush_count;
 
     std::cout << "Instructions Retired:     " << total_retired_instr << std::endl;
     if (total_retired_instr > 0) {
@@ -279,10 +279,6 @@ int main(int argc, char** argv) {
     std::cout << " -> Load-Use Stalls:      " << load_use_stalls << std::endl;
     std::cout << " -> Structural/ALU Stalls:" << (total_stalls - load_use_stalls) << std::endl;
     std::cout << "Total Branch Flush Cycles:" << branch_flushes << std::endl;
-#else
-    (void)PIPELINE_STAGES;
-    std::cout << "Telemetry:                not exposed (build with 'make compile TELEMETRY=1' once top.sv exports meta_*)" << std::endl;
-#endif
 
     std::cout << " ------------------- SIMULATION SPEED ---------------------" << std::endl;
     std::cout << "Elapsed Compute Time:     " << std::fixed << std::setprecision(6) << elapsed_seconds.count() << " seconds" << std::endl;
