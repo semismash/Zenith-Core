@@ -7,7 +7,7 @@ module branch_unit (
     input logic [2:0] id_ex_funct3,
     input logic alu_zero,
     
-    output logic branch_taken,
+    output logic branch_taken
 );
 
     logic branch_passed;

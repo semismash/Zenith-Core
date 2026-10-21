@@ -1,3 +1,5 @@
+import rv32i::*;
+
 module reg_file 
 #(
     parameter DATA_WIDTH = rv32i::DATA_WIDTH,

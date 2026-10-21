@@ -42,8 +42,6 @@ module decoder #(
     // funct3
     output logic [2:0] funct3,
 
-    output logic valid_instr,
-
     // panic
     output logic illegal_instr,     // detects illegal instr, panics respectively
     output logic stop               // stop, but propagates through pipeline without emergency halt
@@ -106,8 +104,6 @@ module decoder #(
         is_jal      = 1'b0;
         is_jalr     = 1'b0;
 
-        valid_instr = 1'b1;
-
         imm_type = N;
         illegal_instr = 1'b0;
         stop = 1'b0;
@@ -117,17 +113,26 @@ module decoder #(
                 reg_write = 1'b1;
                 alu_op = calc_alu_op(1'b1);   // is_r_type = 1
                 alu_in2_roi = 1'b0;
+                if (!((instr[31:25] == 7'b0000000) || (instr[31:25] == 7'b0100000 && (funct3 == 3'b000 || funct3 == 3'b101)))) begin  // only funct7 0000000, or 0100000 for SUB/SRA, is RV32I (e.g. M-extension MUL used to silently decode as ADD)
+                    illegal_instr = 1'b1;
+                end
             end
             OP_I: begin
                 reg_write = 1'b1;
                 alu_op = calc_alu_op(1'b0);   // is_r_type = 0
                 imm_type = I;
+                if ((funct3 == 3'b001 && instr[31:25] != 7'b0000000) ||
+                    (funct3 == 3'b101 && instr[31:25] != 7'b0000000 && instr[31:25] != 7'b0100000)) begin
+                    illegal_instr = 1'b1;   // invalid shift encoding
+                end
+                if (instr == NOP_INSTR) reg_write = 1'b0;   // insert canonical NOP
             end
             OP_I_L: begin   // x
                 reg_write = 1'b1; 
                 mem_to_reg = 1'b1;  // route from data mem to reg file
                 mem_read = 1'b1;
                 imm_type = I;
+                if (funct3 == 3'b011 || funct3 == 3'b110 || funct3 == 3'b111) illegal_instr = 1'b1;
             end
             OP_I_E: begin   
                 alu_bypass = 1'b1;  // don't write to reg, so garbage ALU inputs are harmless here
@@ -137,6 +142,7 @@ module decoder #(
             OP_S: begin 
                 mem_write = 1'b1;
                 imm_type = S;
+                if (funct3 > 3'b010) illegal_instr = 1'b1;  // only SB/SH/SW exist
             end
             OP_B: begin
                 alu_in2_roi = 1'b0;
@@ -147,7 +153,7 @@ module decoder #(
                     3'b101:  begin alu_op = SLT;  end // BGE: jump if SLT result == 0
                     3'b110:  begin alu_op = SLTU; end // BLTU: same as above but unsigned
                     3'b111:  begin alu_op = SLTU; end // BGEU
-                    default: begin alu_op = ADD;  end
+                    default: begin alu_op = ADD; illegal_instr = 1'b1; end
                 endcase
                 imm_type = B;
                 is_branch = 1'b1;
@@ -166,6 +172,7 @@ module decoder #(
                 //pcinc_in2_doi  = 1'b1;  // PC = rs1 + imm
                 imm_type = I;
                 is_jalr = 1'b1;
+                if (funct3 != 3'b000) illegal_instr = 1'b1;
             end
             OP_LUI: begin
                 reg_write = 1'b1; 
@@ -176,6 +183,9 @@ module decoder #(
                 reg_write = 1'b1; 
                 alu_in1_ropc = 1'b1;
                 imm_type = U;
+            end
+            OP_FENCE: begin 
+                if (funct3 != 3'b000) illegal_instr = 1'b1;
             end
             default: begin 
                 illegal_instr = 1'b1;

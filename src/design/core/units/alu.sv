@@ -31,6 +31,8 @@ module alu #(
     output logic out_zero
 );
 
+    localparam SHAMT_WIDTH = $clog2(DATA_WIDTH);   // shift amount width (5 for RV32)
+
     Word data1;
     Word data2;
 
@@ -43,24 +45,24 @@ module alu #(
             alu_out = imm;
         end else begin
             // forward takes priority over normal source, independent of data2
-            if (fwd_alu_in1_ex_mem) data1 = ex_mem_rd_data;        // prioritize EX/MEM over MEM/WB
+            if (use_pc == 1'b1) data1 = pc;                         // PC select must win over forwarding (forwarding only replaces the register operand)
+            else if (fwd_alu_in1_ex_mem) data1 = ex_mem_rd_data;    // prioritize EX/MEM over MEM/WB
             else if (fwd_alu_in1_mem_wb) data1 = mem_wb_rd_data;
-            else if (use_pc == 1'b0) data1 = r_data1;
-            else data1 = pc;
-            // forward takes priority over normal source, independent of data1
-            if (fwd_alu_in2_ex_mem) data2 = ex_mem_rd_data;        // prioritize EX/MEM over MEM/WB
+            else data1 = r_data1;                                   //  plain register operand is now the last fallback
+            // forward takes priority over normal source, independent of data1, for register operand
+            if (use_imm == 1'b1) data2 = imm;                       // imm select must win over forwarding
+            else if (fwd_alu_in2_ex_mem) data2 = ex_mem_rd_data;        // prioritize EX/MEM over MEM/WB
             else if (fwd_alu_in2_mem_wb) data2 = mem_wb_rd_data;
-            else if (use_imm == 1'b0) data2 = r_data2;
-            else data2 = imm;
+            else data2 = r_data2;                                   // plain register operand is now the last fallback
             case (alu_op)
                 ADD: alu_out = data1 + data2;
                 SUB: alu_out = data1 - data2;
                 XOR: alu_out = data1 ^ data2;
                 OR:  alu_out = data1 | data2;
                 AND: alu_out = data1 & data2;
-                SLL: alu_out = data1 << data2[ADDR_WIDTH-1:0];
-                SRL: alu_out = data1 >> data2[ADDR_WIDTH-1:0];
-                SRA: alu_out = $signed(data1) >>> data2[ADDR_WIDTH-1:0];
+                SLL: alu_out = data1 << data2[SHAMT_WIDTH-1:0];
+                SRL: alu_out = data1 >> data2[SHAMT_WIDTH-1:0];
+                SRA: alu_out = $signed(data1) >>> data2[SHAMT_WIDTH-1:0];
                 SLT: alu_out = ($signed(data1) < $signed(data2)) ? 1 : 0;
                 SLTU: alu_out = (data1 < data2) ? 1 : 0;
                 default: alu_out = '0;

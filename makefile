@@ -11,27 +11,37 @@ OBJCOPY = riscv64-unknown-elf-objcopy
 # design
 VERILOG_SRCS = \
 	$(SRC_DIR)/design/rv32i.sv \
-    $(SRC_DIR)/design/core/components/pc.sv \
-    $(SRC_DIR)/design/core/components/reg_file.sv \
-    $(SRC_DIR)/design/core/pipeline/ex_mem.sv \
-    $(SRC_DIR)/design/core/pipeline/id_ex.sv \
-    $(SRC_DIR)/design/core/pipeline/if_id.sv \
-    $(SRC_DIR)/design/core/pipeline/mem_wb.sv \
-	$(SRC_DIR)/design/core/hazard_unit/hazard_unit.sv \
+	$(SRC_DIR)/design/top.sv \
+	$(SRC_DIR)/design/uart.sv \
+	$(SRC_DIR)/design/core/meta.sv \
+	$(SRC_DIR)/design/core/rv32i_core.sv \
+	$(SRC_DIR)/design/core/components/default_slave.sv \
+	$(SRC_DIR)/design/core/components/mmio_interface.sv \
+	$(SRC_DIR)/design/core/components/pc.sv \
+	$(SRC_DIR)/design/core/components/reg_file.sv \
 	$(SRC_DIR)/design/core/hazard_unit/dep_analyzer.sv \
-	$(SRC_DIR)/design/core/hazard_unit/stall_unit.sv \
 	$(SRC_DIR)/design/core/hazard_unit/fwd_unit.sv \
-    $(SRC_DIR)/design/core/units/alu.sv \
-    $(SRC_DIR)/design/core/units/branch_unit.sv \
-    $(SRC_DIR)/design/core/units/decoder.sv \
-    $(SRC_DIR)/design/core/units/fetch.sv \
-    $(SRC_DIR)/design/core/units/imm_gen.sv \
-    $(SRC_DIR)/design/core/units/lsu.sv \
-    $(SRC_DIR)/design/core/meta.sv \
-    $(SRC_DIR)/design/core/rv32i_core.sv \
-    $(SRC_DIR)/design/mem/data_mem.sv \
-    $(SRC_DIR)/design/mem/instr_mem.sv \
-    $(SRC_DIR)/design/top.sv
+	$(SRC_DIR)/design/core/hazard_unit/hazard_unit.sv \
+	$(SRC_DIR)/design/core/hazard_unit/stall_unit.sv \
+	$(SRC_DIR)/design/core/pipeline/ex_mem.sv \
+	$(SRC_DIR)/design/core/pipeline/id_ex.sv \
+	$(SRC_DIR)/design/core/pipeline/if_id.sv \
+	$(SRC_DIR)/design/core/pipeline/mem_wb.sv \
+	$(SRC_DIR)/design/core/uart_module/baud_tick.sv \
+	$(SRC_DIR)/design/core/uart_module/uart_module.sv \
+	$(SRC_DIR)/design/core/uart_module/uart_rx.sv \
+	$(SRC_DIR)/design/core/uart_module/uart_tx.sv \
+	$(SRC_DIR)/design/core/units/alu.sv \
+	$(SRC_DIR)/design/core/units/branch_unit.sv \
+	$(SRC_DIR)/design/core/units/data_decoder.sv \
+	$(SRC_DIR)/design/core/units/decoder.sv \
+	$(SRC_DIR)/design/core/units/fetch.sv \
+	$(SRC_DIR)/design/core/units/imm_gen.sv \
+	$(SRC_DIR)/design/core/units/lsu.sv \
+	$(SRC_DIR)/design/core/units/write_back.sv \
+	$(SRC_DIR)/design/mem/mem.sv \
+	$(SRC_DIR)/design/mem/ram.sv \
+	$(SRC_DIR)/design/mem/rom.sv
 
 # testbench
 CPP_SRCS = $(SRC_DIR)/sim_main.cpp
