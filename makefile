@@ -46,7 +46,43 @@ VERILOG_SRCS = \
 # testbench
 CPP_SRCS = $(SRC_DIR)/sim_main.cpp
 
-.PHONY: all compile run sim clean asm
+# ----------------------------------------------------------------------------------------------
+# CLI (ROOT/src/cli) - built natively on Windows (MSYS2 MinGW64 shell: g++, make, pacman all run
+# from there), since it needs real COM ports and a console. Verilator/riscv-gnu-toolchain above
+# keep running in WSL2 - they're invoked from a *separate* WSL shell, this Makefile's asm/compile/
+# run/sim targets are unaffected and still expect a Linux (WSL) environment.
+#
+# Library locations (see chat for how to obtain each):
+#   CLI_LIB_DIR    lib/CLI11.hpp, lib/toml.hpp                 (header-only, drop in place)
+#   CLI_VCPKG_DIR  vcpkg install tree (replxx, libserialport)  (vcpkg_installed/x64-mingw-dynamic)
+# Override on the command line if yours differs, e.g.:
+#   mingw32-make cli CLI_VCPKG_DIR=C:/vcpkg_installed/x64-mingw-dynamic
+# ----------------------------------------------------------------------------------------------
+CLI_DIR        = $(SRC_DIR)/cli
+CLI_LIB_DIR    = $(CLI_DIR)/lib
+CLI_VCPKG_DIR  = $(CLI_DIR)/vcpkg_installed/x64-mingw-dynamic
+CLI_EXE        = $(CLI_DIR)/zenith.exe
+
+CLI_SRCS = \
+	$(CLI_DIR)/src/main.cpp \
+	$(CLI_DIR)/src/cli.cpp \
+	$(CLI_DIR)/src/shell/shell.cpp \
+	$(CLI_DIR)/src/shell/cmdparse.cpp \
+	$(CLI_DIR)/src/shell/responseprint.cpp \
+	$(CLI_DIR)/src/client/client.cpp \
+	$(CLI_DIR)/src/client/bytegen.cpp \
+	$(CLI_DIR)/src/client/cmd_analyze.cpp \
+	$(CLI_DIR)/src/interface/uart_module.cpp \
+	$(CLI_DIR)/src/profile/profile.cpp \
+	$(CLI_DIR)/src/profile/config.cpp
+
+CXX       = g++
+CXXFLAGS  = -std=c++23 -O2 -Wall -Wextra
+CLI_INCS  = -I$(CLI_LIB_DIR) -I$(CLI_VCPKG_DIR)/include
+CLI_LIBD  = -L$(CLI_VCPKG_DIR)/lib
+CLI_LIBS  = -lreplxx -lserialport -lsetupapi -lws2_32 -pthread
+
+.PHONY: all compile run sim clean asm cli cli-codegen cli-run cli-clean
 
 all: compile
 
@@ -82,6 +118,29 @@ sim:
 	fi
 	@echo "[MAKE] Executing simulation wrapper directly..."
 	$(SIM_EXE)
+
+# regenerates src/headers/codes.hpp (from protocol.inc) and src/headers/messages_embed.hpp
+# (from shell/messages.toml); run this before `cli` whenever either source file changes
+cli-codegen:
+	@echo "[MAKE] Regenerating codes.hpp and messages_embed.hpp..."
+	python3 $(CLI_DIR)/scripts/gen_codes.py
+	python3 $(CLI_DIR)/scripts/embed_messages.py
+
+cli: cli-codegen
+	@echo "[MAKE] Compiling Zenith Core BIOS CLI (native Windows / MinGW64)..."
+	$(CXX) $(CXXFLAGS) -I$(CLI_DIR) $(CLI_INCS) \
+		$(CLI_SRCS) \
+		$(CLI_LIBD) $(CLI_LIBS) \
+		-o $(CLI_EXE)
+	@echo "[MAKE] CLI build complete: $(CLI_EXE)"
+
+cli-run: cli
+	@echo "[MAKE] Launching the CLI..."
+	$(CLI_EXE)
+
+cli-clean:
+	@echo "[MAKE] Sweeping away the CLI build..."
+	rm -f $(CLI_EXE) $(CLI_DIR)/src/headers/messages_embed.hpp $(CLI_DIR)/src/headers/codes.hpp
 
 clean:
 	@echo "[MAKE] Sweeping away generated simulation files..."

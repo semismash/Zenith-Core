@@ -1,24 +1,16 @@
 #pragma once
 
-#include <set>
-#include <vector>
 #include <cstdint>
+#include <memory>
+#include <optional>
+#include <set>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace commands {
 
-    // probably not required, to be removed later
-    enum class CommandName {
-        Config, Switch, Reset,
-        Net, Scan, Connect,
-        Load, Run, Verify,
-        Telemetry, Status,
-        Monitor, Log,
-        Echo, DeviceInfo, Sync,
-        SendByte, SendBytes, HexDump,
-        Clear, Help, About, GitHub
-    };
+    // CommandName enum removed, the variant index already tells the commands apart
 
     enum class DeviceDataParam {
         Arch, Reg, ROM, RAM, Mem, Clk, Baud
@@ -27,9 +19,12 @@ namespace commands {
     enum class TelemetryParam { // cycles & CPI param TBA later
         Instr, Stall, StallPcnt, LoadUseStall, BranchFlush
     };
-    
+
     // commands list:
-    struct CommandConfig {}; // params TBA
+    struct CommandConfig {
+        std::optional<std::string> key;     // none = print all settings of the active profile
+        std::optional<std::string> value;   // none = print this one setting
+    };
 
     struct CommandSwitch {
         bool fpga_else_sim; // fpga = true, sim = false
@@ -37,40 +32,46 @@ namespace commands {
 
     struct CommandReset {};
 
-    struct CommandNet {};   // params TBA
+    struct CommandNet {
+        std::optional<std::string> host;    // defaults to the profile's host/port
+        std::optional<uint16_t> port;
+    };
 
     struct CommandScan {};
 
-    struct CommandConnect {}; // params TBA
+    struct CommandConnect {
+        std::optional<std::string> port_name;   // fpga only, falls back to the serial_port setting
+        std::optional<double> timeout_s;        // SYN-ACK wait, wall-clock seconds
+        std::optional<double> retry_s;          // retry period after a failed attempt
+    };
 
     struct CommandLoad {
         std::string filename;
         bool run;
         bool verify;
-        uint32_t start_addr;
+        std::optional<uint32_t> start_addr;     // the analyzer fills in the program offset from device data if not given
         bool telemode;
         bool telereset;
         bool reg_disp;
+        std::shared_ptr<const std::vector<uint8_t>> image;  // padded program image, filled in by the analyzer
     };
 
-    struct CommandRun {
-        uint32_t start_addr;
-    };
+    struct CommandRun {};   // no offset, the BIOS always runs from the last load offset
 
     struct CommandVerify {};
 
     struct CommandTelemetry {
-        bool telemode;
-        bool telereset;
-        bool inst_reset;
+        std::optional<bool> telemode;   // 0x70
+        std::optional<bool> telereset;  // 0x72
+        bool inst_reset;                // 0x73
     };
 
     struct CommandMonitor {
-        bool is_monitor;
+        std::optional<bool> is_monitor; // none = show current status
     };
 
     struct CommandLog {
-        bool is_log;
+        std::optional<bool> is_log;     // none = show current status
     };
 
     struct CommandEcho {
@@ -79,7 +80,7 @@ namespace commands {
     };
 
     struct CommandDeviceInfo {
-        std::set<DeviceDataParam> device_data_args;
+        std::set<DeviceDataParam> device_data_args;    // empty = everything
     };
 
     struct CommandSync {};
@@ -89,7 +90,8 @@ namespace commands {
     };
 
     struct CommandSendByteList {
-        std::vector<uint8_t> tx_byte_list;
+        std::optional<std::vector<uint8_t>> tx_byte_list;   // none = list the bytes still queued
+        uint32_t interval;                                  // in units of 10 baud ticks (1 byte-time)
     };
 
     struct CommandTelemetryStatus {
@@ -103,17 +105,21 @@ namespace commands {
         uint32_t start_addr;
     };
 
-    struct CommandHelp {};
+    struct CommandClear {};
+    struct CommandHelp {
+        std::optional<std::string> topic;
+    };
     struct CommandAbout {};
     struct CommandGitHub {};
+    struct CommandExit {};
 
     using Command = std::variant<
         CommandConfig, CommandSwitch, CommandReset, CommandNet,
-        CommandScan, CommandConnect, CommandLoad, CommandRun, 
-        CommandVerify, CommandTelemetry, CommandMonitor, CommandLog, 
-        CommandEcho, CommandDeviceInfo, CommandSync, CommandSendByte, 
-        CommandSendByteList, CommandTelemetryStatus, CommandSelfTest, CommandHexDump, 
-        CommandHelp, CommandAbout, CommandGitHub
+        CommandScan, CommandConnect, CommandLoad, CommandRun,
+        CommandVerify, CommandTelemetry, CommandMonitor, CommandLog,
+        CommandEcho, CommandDeviceInfo, CommandSync, CommandSendByte,
+        CommandSendByteList, CommandTelemetryStatus, CommandSelfTest, CommandHexDump,
+        CommandClear, CommandHelp, CommandAbout, CommandGitHub, CommandExit
     >;
-    
+
 }

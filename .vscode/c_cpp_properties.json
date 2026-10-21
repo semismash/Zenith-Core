@@ -3,17 +3,18 @@
         {
             "name": "Win32",
             "includePath": [
+                "${default}",
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/obj_dir",
                 "C:/msys64/ucrt64/share/verilator/include",
                 "C:/msys64/ucrt64/share/verilator/include/vltstd"
             ],
             "defines": [
                 "_DEBUG",
                 "UNICODE",
-                "_UNICODE"
+                "_UNICODE",
+                "VM_TRACE=1"
             ],
-            "compilerPath": "C:/msys64/ucrt64/bin/gcc.exe",
+            "compilerPath": "C:/msys64/ucrt64/bin/g++.exe",
             "cStandard": "c11",
             "cppStandard": "c++23",
             "intelliSenseMode": "windows-gcc-x64"
