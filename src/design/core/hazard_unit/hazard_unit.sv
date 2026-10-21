@@ -1,3 +1,5 @@
+import rv32i::*;
+
 module hazard_unit (
     // IF/ID (incl. OpCode bits)
     input OpCode if_id_opcode,  // x
@@ -16,8 +18,10 @@ module hazard_unit (
     input logic id_ex_mem_read,     // if load (X)
     input logic id_ex_reg_write,    // if reg write (X)
     input logic branch_taken,       // check if a branch was taken, to stall control hazards for now (X)
-    input logic instr_fetch_valid,  // x
     input logic data_fetch_valid,   // x
+    input logic wb_data_wait,       // load in WB without its R (X)
+    input logic freeze,             // sticky STOP / HALT (X)
+    input logic stop_in_flight,     // ECALL / EBREAK in EX, MEM or WB (X)
     // TO FORWARDING UNIT DIRECTLY
     input logic ex_mem_reg_write,   // x
     input logic mem_wb_reg_write,   // x
@@ -38,7 +42,8 @@ module hazard_unit (
     // METADATA
     output logic meta_branch_flush, // x
     output logic meta_is_stall,     // x
-    output logic meta_is_l_use      // x
+    output logic meta_is_l_use,     // x
+    output logic meta_is_instr      // if decoded instruction advanced this cycle (X)
 );
 
     // connecting ports between dep analyzer and fwd unit/stall unit
@@ -106,8 +111,10 @@ module hazard_unit (
         .id_ex_mem_read            (id_ex_mem_read), // if load (load-use)                                              // x
         .id_ex_reg_write           (id_ex_reg_write), // if writing to reg (mostly to disqualify non-load instructions) // x
         .branch_taken              (branch_taken), // check if a branch was taken, to stall control hazards for now     // x
-        .instr_fetch_valid         (instr_fetch_valid), // x
         .data_fetch_valid          (data_fetch_valid),  // x
+        .wb_data_wait              (wb_data_wait),      // x
+        .freeze                    (freeze),            // x
+        .stop_in_flight            (stop_in_flight),    // x
         // if read registers are even valid to begin with
         .if_id_rs1_valid           (if_id_rs1_valid),
         .if_id_rs2_valid           (if_id_rs2_valid),
@@ -122,7 +129,8 @@ module hazard_unit (
         // METADATA
         .meta_branch_flush         (meta_branch_flush), // x
         .meta_is_stall             (meta_is_stall),     // x
-        .meta_is_l_use             (meta_is_l_use)      // x
+        .meta_is_l_use             (meta_is_l_use),     // x
+        .meta_is_instr             (meta_is_instr)      // x
     );
 
     fwd_unit u_fwd_unit (
