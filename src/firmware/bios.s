@@ -2,7 +2,11 @@
 .equ CPU_CLOCK_HZ,      10000000                    # core clock, the timeouts and the H3 cooldown are derived from it (same value as dd_clk)
 .equ UART_BAUD_RATE,    9600                        # UART baud rate, used to size the cooldown window in byte-times (same value as dd_baud)
 .equ UART_POLL_CYCLES,  10                          # PLACEHOLDER (review later): clock cycles one pass of the uart_rx wait loop takes; measure in sim and adjust
-.equ DEFAULT_TIMEOUT_CYCLE, (0x4000000 / UART_POLL_CYCLES) # uart_rx counts loop passes, not cycles, so divide the cycle budget by cycles-per-pass # 67 million cycle safety window (6.7s at 10MHz)
+.ifndef TIMEOUT_DIV
+.equ TIMEOUT_DIV, 1                                 # 1 = real timeouts (FPGA)
+.endif
+.equ DEFAULT_TIMEOUT_CYCLE,     (0x4000000 / (UART_POLL_CYCLES * TIMEOUT_DIV))
+.equ CONNECTION_TIMEOUT_CYCLES, (0x8F00000 / (UART_POLL_CYCLES * TIMEOUT_DIV))
 .equ UART_STATUS,       0x80000000                  # 0x8000_0000
 .equ UART_RXD_OFFSET,   0x4                         # 0x8000_0004
 .equ UART_TXD_OFFSET,   0x8                         # 0x8000_0008
@@ -23,7 +27,6 @@
 .equ ADDR_META_BR_FLUSH,    0x80001010
 
 .equ BIOS_STACK_SIZE,   64                          # 64 bytes allocated for BIOS
-.equ CONNECTION_TIMEOUT_CYCLES, (0x8F00000 / UART_POLL_CYCLES) # connection_timeout form
 .equ MSG_ECHO_BUF,      0x21800                     # was 0x20800 # dedicated 256-byte destination buffer for msg_echo's gets() call, separate from the PROGRAM_TOP+0x0-0xF register-save scratch
 .equ REG_DUMP_BUF,      0x21900                     # was 0x20900 # 124-byte (31 word) scratch buffer for jump_back_reg_disp's x1-x31 dump, placed right after MSG_ECHO_BUF
 .equ MSG_ECHO_BUF_SIZE, 256                         # size of MSG_ECHO_BUF, gets() rejects anything longer
