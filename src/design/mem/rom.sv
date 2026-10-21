@@ -5,80 +5,69 @@ module rom #(   // currently houses only the bootloader
 ) (
     input  logic clk,
     input  logic rst_n,
-    input  Word  instr_addr,        // 0-based, relative to ROM's own start
-    output Word  instr_out,         // mem not busy (not fetching something rn)
-    output logic instr_valid,       // signal to send back for instruction fetch
-    output logic instr_not_found,   // instructions not found (faults to be dealt with differently soon, after planned AXI4Lite protocol is implemented)
 
-    input  Word     data_addr,
-    input  ReqBytes req_bytes,
-    input  logic    write_enable,   // store to ROM is rejected with data_not_found
-    input  logic    data_req_start, // only pulsed by mem.sv when the address is inside the ROM
-    output Word     data_out,
-    output logic    data_valid,     // one cycle after data_req_start
-    output logic    data_not_found 
+    // port A, instruction fetch (read only); addresses arrive already steered here and relative to the ROM base
+    input  Word  if_araddr,         
+    input  logic if_arvalid,        
+    output logic if_arready,        // constant 1
+    output Word  if_rdata,          // block RAM output register
+    output logic if_rvalid,         // one cycle after the AR handshake
+    input  logic if_rready,         // unused, masters keep RREADY at 1
+    output Resp  if_rresp,          
+
+    // port B, data (read only, every write is answered SLVERR and nothing is written)
+    input  Word  data_araddr,       
+    input  logic data_arvalid,      
+    output logic data_arready,      
+    output Word  data_rdata,        
+    output logic data_rvalid,       
+    input  logic data_rready,       // unused
+    output Resp  data_rresp,        
+    input  Word  data_awaddr,       // unused (ROM is write protected)
+    input  logic data_awvalid,      
+    output logic data_awready,      
+    input  Word  data_wdata,        // unused
+    input  logic [3:0] data_wstrb,  // unused
+    input  logic data_wvalid,       
+    output logic data_wready,       
+    output logic data_bvalid,       
+    input  logic data_bready,       // unused
+    output Resp  data_bresp         
 );
 
-    localparam INST_SIZE_BYTES = DATA_WIDTH >> 3;
+    localparam int ROM_WORDS = ROM_SIZE_BYTES / 4;      // word-wide storage so Vivado can map it to block RAM
+    localparam int ROM_AW    = $clog2(ROM_WORDS);       // word index width
 
-    Byte container [ROM_SIZE_BYTES - 1:0];
+    // bounds are decoded in mem.sv, unmapped goes to the default slave
+
+    Word container [ROM_WORDS - 1:0];
     initial begin
-        $readmemh("bios.hex", container);    // PLACEHOLDER PATH to BIOS binary
+        $readmemh("bios.hex", container);    // PLACEHOLDER PATH TO BIOS BINARY
     end
 
-    logic fault_reg;
+    assign if_arready   = 1'b1;     // always accepts (single-cycle address handshake)
+    assign data_arready = 1'b1;     
+    assign data_awready = 1'b1;     
+    assign data_wready  = 1'b1;     
+    assign if_rresp     = RESP_OKAY;    
+    assign data_rresp   = RESP_OKAY;    
+    assign data_bresp   = RESP_SLVERR;  // ROM is write protected
 
-    always_ff @(posedge clk) begin
-        if (instr_addr > (ROM_SIZE_BYTES - INST_SIZE_BYTES)) begin
-            fault_reg <= 1'b1;
-            instr_out <= '0;
-        end else begin
-            fault_reg <= 1'b0;
-            instr_out <= {
-                container[instr_addr + 3],
-                container[instr_addr + 2],
-                container[instr_addr + 1],
-                container[instr_addr]
-            };
-        end
-    end
-    assign instr_not_found = fault_reg;
+    always_ff @(posedge clk) begin                                          // two synchronous read ports (dual-port ROM)
+        if (if_arvalid)   if_rdata   <= container[if_araddr[ROM_AW+1:2]];   
+        if (data_arvalid) data_rdata <= container[data_araddr[ROM_AW+1:2]]; 
+    end                                                                     
 
-    //  tie to high as answers in one cycle (PC address fetches are never misses, always happens in any cycle)
-    logic instr_valid_q;
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) instr_valid_q <= 1'b0;
-        else        instr_valid_q <= 1'b1;
-    end
-    assign instr_valid = instr_valid_q;
-
-    logic data_fault_reg;                                                           
-    logic is_data_addr_invalid;                                                     
-    assign is_data_addr_invalid = ((data_addr + req_bytes) > ROM_SIZE_BYTES);        // access must end inside the ROM
-
-    always_ff @(posedge clk) begin                                                  
-        if (data_req_start) begin                                                   
-            data_fault_reg <= 1'b0;                                                 
-            if (req_bytes == ZERO) begin                                            
-                data_out <= '0;                                                     
-            end else if (write_enable || is_data_addr_invalid) begin                 // ROM is write protected; reads past its end fault
-                data_fault_reg <= 1'b1;                                             
-                data_out       <= '0;                                               
-            end else begin                                                          
-                case (req_bytes)                                                     // zero-extended, little endian (LSU does the sign extension)
-                    ONE:  data_out <= {{(DATA_WIDTH - 8){1'b0}}, container[data_addr]};                                                   
-                    TWO:  data_out <= {{(DATA_WIDTH - 16){1'b0}}, container[data_addr + 1], container[data_addr]};                        
-                    FOUR: data_out <= {container[data_addr + 3], container[data_addr + 2], container[data_addr + 1], container[data_addr]}; 
-                    default: data_fault_reg <= 1'b1;                                
-                endcase                                                             
-            end                                                                     
-        end                                                                         
-    end                                                                             
-    assign data_not_found = data_fault_reg;                                         
-
-    always_ff @(posedge clk or negedge rst_n) begin                                 
-        if (!rst_n) data_valid <= 1'b0;                                             
-        else        data_valid <= data_req_start;                                   
-    end                                                                             
+    always_ff @(posedge clk or negedge rst_n) begin                         // RD_IDLE / RD_RESP and WR_IDLE / WR_RESP
+        if (!rst_n) begin                                                   
+            if_rvalid   <= 1'b0;                                            
+            data_rvalid <= 1'b0;                                            
+            data_bvalid <= 1'b0;                                            
+        end else begin                                                      
+            if_rvalid   <= if_arvalid;                                      
+            data_rvalid <= data_arvalid;                                    
+            data_bvalid <= data_awvalid && data_wvalid;                     // write accepted (and ignored), answer SLVERR
+        end                                                                 
+    end                                                                     
 
 endmodule

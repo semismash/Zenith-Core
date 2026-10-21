@@ -6,114 +6,78 @@ module ram #(
     input logic clk,
     input logic rst_n,
 
-    // PORT A: instruction mem
-    input  Word instr_addr,
-    output Word instr_out,
-    output logic instr_valid,           // tied high, port exists for compatability and consistency reasons
-    output logic instr_not_found,
+    // PORT A: instruction mem; AXI4-Lite read-only slave, addresses arrive steered here and relative to RAM_BASE
+    input  Word  if_araddr,
+    input  logic if_arvalid,
+    output logic if_arready,
+    output Word  if_rdata,
+    output logic if_rvalid,
+    input  logic if_rready,
+    output Resp  if_rresp,
 
-    // PORT B: data mem
-    input  Word data_addr,
-    input  ReqBytes req_bytes,
-    input  logic write_enable,
-    input  Word data_in,
-    output Word data_out,
-
-    input  logic data_req_start,    // pulse one cycle on mem access cycle (to cause stall)
-    output logic data_valid,        // pulse to tell LSU that access has finished
-    output logic data_not_found
+    // PORT B: data mem; AXI4-Lite read / write slave
+    input  Word  data_araddr,
+    input  logic data_arvalid,
+    output logic data_arready,
+    output Word  data_rdata,
+    output logic data_rvalid,
+    input  logic data_rready,
+    output Resp  data_rresp,
+    input  Word  data_awaddr,
+    input  logic data_awvalid,
+    output logic data_awready,
+    input  Word  data_wdata,
+    input  logic [3:0] data_wstrb,
+    input  logic data_wvalid,
+    output logic data_wready,
+    output logic data_bvalid,
+    input  logic data_bready,
+    output Resp  data_bresp
 );
 
-    localparam INST_SIZE_BYTES = DATA_WIDTH >> 3;
+    localparam int RAM_WORDS = RAM_SIZE_BYTES / 4;      // word-wide storage with byte enables (block RAM friendly)
+    localparam int RAM_AW    = $clog2(RAM_WORDS);       // word index width
 
-    Byte container [RAM_SIZE_BYTES - 1: 0];
-    initial begin
-        $readmemh("bootloader.hex", container);
-    end
+    Word container [RAM_WORDS - 1:0];   // word array (for new word-wise addressign and safety)
+
+    assign if_arready   = 1'b1;     // always accepts (single-cycle address handshake)
+    assign data_arready = 1'b1;
+    assign data_awready = 1'b1;     // no B response is ever left unaccepted (BREADY is constant 1)
+    assign data_wready  = 1'b1;
+    assign if_rresp     = RESP_OKAY;
+    assign data_rresp   = RESP_OKAY;
+    assign data_bresp   = RESP_OKAY;
 
     // PORT A:
-    logic instr_fault_reg;
-
-    always_ff @(posedge clk) begin
-        // perform boundary check synchronously
-        if (instr_addr > (RAM_SIZE_BYTES - INST_SIZE_BYTES)) begin
-            instr_fault_reg <= 1'b1;
-            instr_out       <= '0;
-        end else begin
-            instr_fault_reg <= 1'b0;
-            instr_out       <= { 
-                container[instr_addr + 3], // do INST_SIZE_BYTES times
-                container[instr_addr + 2], 
-                container[instr_addr + 1], 
-                container[instr_addr] 
-            };
-        end
-    end
-    assign instr_not_found = instr_fault_reg;
-
-    // never "busy" as always fetches in any cycle (so technically busy all the time, but hence never busy, syndrome ahh logic)
-    logic instr_valid_q;    
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) instr_valid_q <= 1'b0;
-        else        instr_valid_q <= 1'b1;
-    end
-    assign instr_valid = instr_valid_q;
+    always_ff @(posedge clk) begin                                          // synchronous read, output register = RDATA
+        if (if_arvalid) if_rdata <= container[if_araddr[RAM_AW+1:2]];       
+    end                                                                     
 
     // PORT B:
-    logic data_fault_reg;
-    
-    // boundary check must happen dynamically or be registered
-    logic is_data_addr_invalid;
-    assign is_data_addr_invalid = ((data_addr + req_bytes) > RAM_SIZE_BYTES);
+    logic             b_write;                                              
+    logic [RAM_AW-1:0] b_idx;                                               // one address per port so it maps to a true dual-port block RAM
+    assign b_write = data_awvalid && data_wvalid;                           // the LSU sends AW and W together
+    assign b_idx   = b_write ? data_awaddr[RAM_AW+1:2] : data_araddr[RAM_AW+1:2];  // a load and a store never share a cycle (one instruction in MEM)
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk) begin                                          
+        if (b_write) begin                                                  // synchronous byte-enabled write, lands at the end of the accept cycle
+            for (int i = 0; i < 4; i++) begin                               
+                if (data_wstrb[i]) container[b_idx][8*i +: 8] <= data_wdata[8*i +: 8];  
+            end                                                             
+        end                                                                 
+        if (data_arvalid) data_rdata <= container[b_idx];                   // synchronous read
+    end                                                                     
 
-        if (data_req_start) begin   // only if requested data (mem fetch)
-            
-            data_fault_reg <= 1'b0;
-            if (req_bytes == ZERO) begin
-                data_out <= '0;
-            end else if (is_data_addr_invalid) begin
-                data_fault_reg <= 1'b1;
-                data_out       <= '0;
-            end else begin
-                // synchronous write
-                if (write_enable) begin
-                    case(req_bytes)
-                        ONE: begin
-                            container[data_addr]     <= data_in[7:0];
-                        end
-                        TWO: begin
-                            container[data_addr]     <= data_in[7:0];
-                            container[data_addr + 1] <= data_in[15:8];
-                        end
-                        FOUR: begin
-                            container[data_addr]     <= data_in[7:0];
-                            container[data_addr + 1] <= data_in[15:8];
-                            container[data_addr + 2] <= data_in[23:16];
-                            container[data_addr + 3] <= data_in[31:24];
-                        end
-                        default: data_fault_reg <= 1'b1;
-                    endcase
-                end
-
-                // synchronous read
-                case (req_bytes)
-                    ONE:  data_out <= {{(DATA_WIDTH - 8){1'b0}}, container[data_addr]};
-                    TWO:  data_out <= {{(DATA_WIDTH - 16){1'b0}}, container[data_addr + 1], container[data_addr]};
-                    FOUR: data_out <= { container[data_addr + 3], container[data_addr + 2], container[data_addr + 1], container[data_addr] };
-                    default: data_fault_reg <= 1'b1;
-                endcase
-            end
-            
-        end
-
-    end
-    assign data_not_found = data_fault_reg;
-
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) data_valid <= 1'b0;
-        else        data_valid <= data_req_start;
-    end
+    always_ff @(posedge clk or negedge rst_n) begin                         // RD_IDLE / RD_RESP and WR_IDLE / WR_RESP
+        if (!rst_n) begin                                                   // goy
+            if_rvalid   <= 1'b0;                                            
+            data_rvalid <= 1'b0;                                            
+            data_bvalid <= 1'b0;                                            
+        end else begin                                                      
+            if_rvalid   <= if_arvalid;                                      
+            data_rvalid <= data_arvalid;                                    
+            data_bvalid <= b_write;                                         
+        end                                                                 
+    end                                                                     
 
 endmodule
