@@ -21,7 +21,7 @@ module top(
 
     // ------------------------------------------------------------------------------------------
     // clock: 100 MHz -> 10 MHz (MMCM: VCO = 100 MHz x 10 = 1000 MHz, CLKOUT0 = 1000 / 100 = 10 MHz)
-    // Verilator has no Xilinx primitives, so in simulation the input clock drives the core directly
+    // Xilinx primitives don't exist in Verilator, so in simulation the input clock drives the core directly
     // ------------------------------------------------------------------------------------------
     logic cpu_clk;          // core clock
     logic mmcm_locked;

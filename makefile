@@ -1,147 +1,170 @@
-VERILATOR = verilator
-SIM_EXE   = ./obj_dir/Vtop.exe
-SRC_DIR = src
-
-# RISC-V Toolchain Configurations
-AS      = riscv64-unknown-elf-as
-LD      = riscv64-unknown-elf-ld
-OBJCOPY = riscv64-unknown-elf-objcopy
-
-
-# design
-VERILOG_SRCS = \
-	$(SRC_DIR)/design/rv32i.sv \
-	$(SRC_DIR)/design/top.sv \
-	$(SRC_DIR)/design/uart.sv \
-	$(SRC_DIR)/design/core/meta.sv \
-	$(SRC_DIR)/design/core/rv32i_core.sv \
-	$(SRC_DIR)/design/core/components/default_slave.sv \
-	$(SRC_DIR)/design/core/components/mmio_interface.sv \
-	$(SRC_DIR)/design/core/components/pc.sv \
-	$(SRC_DIR)/design/core/components/reg_file.sv \
-	$(SRC_DIR)/design/core/hazard_unit/dep_analyzer.sv \
-	$(SRC_DIR)/design/core/hazard_unit/fwd_unit.sv \
-	$(SRC_DIR)/design/core/hazard_unit/hazard_unit.sv \
-	$(SRC_DIR)/design/core/hazard_unit/stall_unit.sv \
-	$(SRC_DIR)/design/core/pipeline/ex_mem.sv \
-	$(SRC_DIR)/design/core/pipeline/id_ex.sv \
-	$(SRC_DIR)/design/core/pipeline/if_id.sv \
-	$(SRC_DIR)/design/core/pipeline/mem_wb.sv \
-	$(SRC_DIR)/design/core/uart_module/baud_tick.sv \
-	$(SRC_DIR)/design/core/uart_module/uart_module.sv \
-	$(SRC_DIR)/design/core/uart_module/uart_rx.sv \
-	$(SRC_DIR)/design/core/uart_module/uart_tx.sv \
-	$(SRC_DIR)/design/core/units/alu.sv \
-	$(SRC_DIR)/design/core/units/branch_unit.sv \
-	$(SRC_DIR)/design/core/units/data_decoder.sv \
-	$(SRC_DIR)/design/core/units/decoder.sv \
-	$(SRC_DIR)/design/core/units/fetch.sv \
-	$(SRC_DIR)/design/core/units/imm_gen.sv \
-	$(SRC_DIR)/design/core/units/lsu.sv \
-	$(SRC_DIR)/design/core/units/write_back.sv \
-	$(SRC_DIR)/design/mem/mem.sv \
-	$(SRC_DIR)/design/mem/ram.sv \
-	$(SRC_DIR)/design/mem/rom.sv
-
-# testbench
-CPP_SRCS = $(SRC_DIR)/sim_main.cpp
-
-# ----------------------------------------------------------------------------------------------
-# CLI (ROOT/src/cli) - built natively on Windows (MSYS2 MinGW64 shell: g++, make, pacman all run
-# from there), since it needs real COM ports and a console. Verilator/riscv-gnu-toolchain above
-# keep running in WSL2 - they're invoked from a *separate* WSL shell, this Makefile's asm/compile/
-# run/sim targets are unaffected and still expect a Linux (WSL) environment.
+# ==================================================================================================
+# Zenith Core - Makefile, stage 1: Verilator core-only simulation (no CLI, no bridge yet)
 #
-# Library locations (see chat for how to obtain each):
-#   CLI_LIB_DIR    lib/CLI11.hpp, lib/toml.hpp                 (header-only, drop in place)
-#   CLI_VCPKG_DIR  vcpkg install tree (replxx, libserialport)  (vcpkg_installed/x64-mingw-dynamic)
-# Override on the command line if yours differs, e.g.:
-#   mingw32-make cli CLI_VCPKG_DIR=C:/vcpkg_installed/x64-mingw-dynamic
-# ----------------------------------------------------------------------------------------------
-CLI_DIR        = $(SRC_DIR)/cli
-CLI_LIB_DIR    = $(CLI_DIR)/lib
-CLI_VCPKG_DIR  = $(CLI_DIR)/vcpkg_installed/x64-mingw-dynamic
-CLI_EXE        = $(CLI_DIR)/zenith.exe
+# Run from ROOT. Everything below assumes ONE shell that has verilator + the riscv toolchain
+# (MSYS2 UCRT64). If Verilator lives in a different shell (e.g. WSL2), run `make asm` in the shell
+# with the toolchain and `make compile sim` in the Verilator one; the targets are independent.
+#
+#   make run                      assemble src/firmware/program.s, build the sim, run it
+#   make run PROG=test_alu        same for src/firmware/test_alu.s  ->  src/firmware/test_alu.hex
+#   make asm PROG=test_alu        assemble only
+#   make compile                  build the Verilator sim only
+#   make sim PROG=test_alu        run the already-built sim with that program
+#   make run TELEMETRY=1          build the TB with the telemetry printout (see sim_main.cpp)
+#   make run AUTO_STOP=0          do not append the 0xFFFFFFFF stop word to the hex
+#   make clean
+# ==================================================================================================
 
-CLI_SRCS = \
-	$(CLI_DIR)/src/main.cpp \
-	$(CLI_DIR)/src/cli.cpp \
-	$(CLI_DIR)/src/shell/shell.cpp \
-	$(CLI_DIR)/src/shell/cmdparse.cpp \
-	$(CLI_DIR)/src/shell/responseprint.cpp \
-	$(CLI_DIR)/src/client/client.cpp \
-	$(CLI_DIR)/src/client/bytegen.cpp \
-	$(CLI_DIR)/src/client/cmd_analyze.cpp \
-	$(CLI_DIR)/src/interface/uart_module.cpp \
-	$(CLI_DIR)/src/profile/profile.cpp \
-	$(CLI_DIR)/src/profile/config.cpp
+SRC_DIR      = src
+DESIGN_DIR   = $(SRC_DIR)/design
+SIM_DIR      = $(SRC_DIR)/rtl_sim
+FW_DIR       = $(SRC_DIR)/firmware
+TMP_DIR      = tmp
 
-CXX       = g++
-CXXFLAGS  = -std=c++23 -O2 -Wall -Wextra
-CLI_INCS  = -I$(CLI_LIB_DIR) -I$(CLI_VCPKG_DIR)/include
-CLI_LIBD  = -L$(CLI_VCPKG_DIR)/lib
-CLI_LIBS  = -lreplxx -lserialport -lsetupapi -lws2_32 -pthread
+# --- program under test ---------------------------------------------------------------------------
+PROG        ?= program
+ASM_SRC      = $(FW_DIR)/$(PROG).s
+HEX_OUT      = $(FW_DIR)/$(PROG).hex
 
-.PHONY: all compile run sim clean asm cli cli-codegen cli-run cli-clean
+# link address of .text; must match the ROM base in rv32i.sv / the core's reset PC
+TEXT_BASE   ?= 0x0
+# ROM size, only used for the program-size check below
+ROM_BYTES   ?= 8192
+# 1 = append a 0xFFFFFFFF word after the program (the sim's "stop" sentinel)
+AUTO_STOP   ?= 1
+# 1 = define HAVE_TELEMETRY in the testbench (needs meta_* signals in top.sv)
+TELEMETRY   ?= 0
+
+# --- toolchain ------------------------------------------------------------------------------------
+RISCV_PREFIX ?= riscv64-unknown-elf-
+AS      = $(RISCV_PREFIX)as
+LD      = $(RISCV_PREFIX)ld
+OBJCOPY = $(RISCV_PREFIX)objcopy
+OBJDUMP = $(RISCV_PREFIX)objdump
+
+VERILATOR = verilator
+EXE_EXT  := $(if $(filter Windows_NT,$(OS)),.exe,)
+SIM_EXE   = ./obj_dir/Vtop$(EXE_EXT)
+
+# --- RTL sources ----------------------------------------------------------------------------------
+# Packages have to be compiled first, in dependency order (a package that imports another goes
+# after it). Every other .sv under src/design is picked up automatically after them.
+# Any new package file has to be added here.
+# (If a stale/duplicate .sv in there causes "duplicate module" errors, move it out of src/design.)
+PKG_SRCS     = $(DESIGN_DIR)/rv32i.sv $(DESIGN_DIR)/uart.sv
+VERILOG_SRCS = $(PKG_SRCS) $(filter-out $(PKG_SRCS),$(sort $(shell find $(DESIGN_DIR) -name '*.sv')))
+
+CPP_SRCS     = $(SIM_DIR)/sim_main.cpp
+TB_DEFS      = $(if $(filter 1,$(TELEMETRY)),-DHAVE_TELEMETRY,)
+
+.PHONY: all asm compile run sim clean
 
 all: compile
 
+# --- assemble: program.s -> tmp/*.o/.elf/.bin/.lst -> src/firmware/<PROG>.hex ----------------------
+# The hex is one little-endian 32-bit word per line, which is what rom.sv's $readmemh expects.
 asm:
-	@if [ ! -f program.s ]; then \
-		echo "[MAKE ERROR] program.s not found in root directory!"; \
+	@if [ ! -f $(ASM_SRC) ]; then \
+		echo "[MAKE ERROR] $(ASM_SRC) not found!"; \
 		exit 1; \
 	fi
-	@echo "[MAKE] Assembling program.s..."
-	$(AS) -march=rv32i -mabi=ilp32 -o tmp/program.o program.s
-	@echo "[MAKE] Linking ELF image at base address 0x0..."
-	$(LD) -m elf32lriscv -Ttext 0x0 -o tmp/program.elf tmp/program.o
-	@echo "[MAKE] Extracting raw machine bytes to binary..."
-	$(OBJCOPY) -O binary tmp/program.elf tmp/program.bin
-	@rm -f tmp/program.o tmp/program.elf
-	@echo "[MAKE] Assembly compilation complete!"
+	@mkdir -p $(TMP_DIR)
+	@echo "[MAKE] Assembling $(ASM_SRC)..."
+	$(AS) -march=rv32i -mabi=ilp32 -o $(TMP_DIR)/$(PROG).o $(ASM_SRC)
+	@echo "[MAKE] Linking at $(TEXT_BASE)..."
+	$(LD) -m elf32lriscv -Ttext $(TEXT_BASE) -o $(TMP_DIR)/$(PROG).elf $(TMP_DIR)/$(PROG).o
+	$(OBJCOPY) -O binary $(TMP_DIR)/$(PROG).elf $(TMP_DIR)/$(PROG).bin
+	$(OBJDUMP) -d $(TMP_DIR)/$(PROG).elf > $(TMP_DIR)/$(PROG).lst
+	@size=$$(wc -c < $(TMP_DIR)/$(PROG).bin); \
+	limit=$$(( $(ROM_BYTES) - $(if $(filter 1,$(AUTO_STOP)),4,0) )); \
+	if [ $$size -gt $$limit ]; then \
+		echo "[MAKE ERROR] program is $$size bytes, ROM allows $$limit!"; \
+		exit 1; \
+	fi
+	@echo "[MAKE] Writing $(HEX_OUT)..."
+	@od -An -v -tx4 -w4 $(TMP_DIR)/$(PROG).bin | tr -d ' ' > $(HEX_OUT)
+	@$(if $(filter 1,$(AUTO_STOP)),echo ffffffff >> $(HEX_OUT),true)
+	@echo "[MAKE] Done: $(HEX_OUT)  (disassembly: $(TMP_DIR)/$(PROG).lst)"
 
+# --- Verilator build ------------------------------------------------------------------------------
+# --public-flat-rw makes every internal signal reachable from sim_main.cpp (rootp->top__DOT__...).
 compile: $(VERILOG_SRCS) $(CPP_SRCS)
 	@echo "[MAKE] Compiling SystemVerilog core and C++ testbench..."
-	$(VERILATOR) --cc --exe --build -j -Wall -Wno-fatal --trace -I$(SRC_DIR) \
-		-CFLAGS "-O2" \
+	$(VERILATOR) --cc --exe --build -j -Wall -Wno-fatal --trace --public-flat-rw \
+		-I$(DESIGN_DIR) \
+		-CFLAGS "-O2 $(TB_DEFS)" \
 		-LDFLAGS "-O2" \
 		$(VERILOG_SRCS) $(CPP_SRCS) --top-module top
 
 run: asm compile
-	@echo "[MAKE] Executing simulation wrapper..."
-	$(SIM_EXE)
+	@echo "[MAKE] Executing simulation ($(HEX_OUT))..."
+	$(SIM_EXE) +ROM_HEX=$(HEX_OUT)
 
 sim:
 	@if [ ! -f $(SIM_EXE) ]; then \
-		echo "[MAKE ERROR] Simulation executable $(SIM_EXE) not found! Run 'make compile' first."; \
+		echo "[MAKE ERROR] $(SIM_EXE) not found! Run 'make compile' first."; \
 		exit 1; \
 	fi
-	@echo "[MAKE] Executing simulation wrapper directly..."
-	$(SIM_EXE)
-
-# regenerates src/headers/codes.hpp (from protocol.inc) and src/headers/messages_embed.hpp
-# (from shell/messages.toml); run this before `cli` whenever either source file changes
-cli-codegen:
-	@echo "[MAKE] Regenerating codes.hpp and messages_embed.hpp..."
-	python3 $(CLI_DIR)/scripts/gen_codes.py
-	python3 $(CLI_DIR)/scripts/embed_messages.py
-
-cli: cli-codegen
-	@echo "[MAKE] Compiling Zenith Core BIOS CLI (native Windows / MinGW64)..."
-	$(CXX) $(CXXFLAGS) -I$(CLI_DIR) $(CLI_INCS) \
-		$(CLI_SRCS) \
-		$(CLI_LIBD) $(CLI_LIBS) \
-		-o $(CLI_EXE)
-	@echo "[MAKE] CLI build complete: $(CLI_EXE)"
-
-cli-run: cli
-	@echo "[MAKE] Launching the CLI..."
-	$(CLI_EXE)
-
-cli-clean:
-	@echo "[MAKE] Sweeping away the CLI build..."
-	rm -f $(CLI_EXE) $(CLI_DIR)/src/headers/messages_embed.hpp $(CLI_DIR)/src/headers/codes.hpp
+	@if [ ! -f $(HEX_OUT) ]; then \
+		echo "[MAKE ERROR] $(HEX_OUT) not found! Run 'make asm PROG=$(PROG)' first."; \
+		exit 1; \
+	fi
+	@echo "[MAKE] Executing simulation directly ($(HEX_OUT))..."
+	$(SIM_EXE) +ROM_HEX=$(HEX_OUT)
 
 clean:
 	@echo "[MAKE] Sweeping away generated simulation files..."
-	rm -rf obj_dir tmp/program.bin tmp/program.o tmp/program.elf
+	rm -rf obj_dir $(TMP_DIR) waveform.vcd
+
+
+# ==================================================================================================
+# CLI (ROOT/src/cli) - DISABLED for now, re-enable (uncomment) when we move to the bridge/CLI stage.
+# Built natively on Windows (MSYS2 MinGW64 shell). Remember to add cli cli-codegen cli-run cli-clean
+# back to the .PHONY line above.
+# ==================================================================================================
+# CLI_DIR        = $(SRC_DIR)/cli
+# CLI_LIB_DIR    = $(CLI_DIR)/lib
+# CLI_VCPKG_DIR  = $(CLI_DIR)/vcpkg_installed/x64-mingw-dynamic
+# CLI_EXE        = $(CLI_DIR)/zenith.exe
+#
+# CLI_SRCS = \
+# 	$(CLI_DIR)/src/main.cpp \
+# 	$(CLI_DIR)/src/cli.cpp \
+# 	$(CLI_DIR)/src/shell/shell.cpp \
+# 	$(CLI_DIR)/src/shell/cmdparse.cpp \
+# 	$(CLI_DIR)/src/shell/responseprint.cpp \
+# 	$(CLI_DIR)/src/client/client.cpp \
+# 	$(CLI_DIR)/src/client/bytegen.cpp \
+# 	$(CLI_DIR)/src/client/cmd_analyze.cpp \
+# 	$(CLI_DIR)/src/interface/uart_module.cpp \
+# 	$(CLI_DIR)/src/profile/profile.cpp \
+# 	$(CLI_DIR)/src/profile/config.cpp
+#
+# CXX       = g++
+# CXXFLAGS  = -std=c++23 -O2 -Wall -Wextra
+# CLI_INCS  = -I$(CLI_LIB_DIR) -I$(CLI_VCPKG_DIR)/include
+# CLI_LIBD  = -L$(CLI_VCPKG_DIR)/lib
+# CLI_LIBS  = -lreplxx -lserialport -lsetupapi -lws2_32 -pthread
+#
+# # regenerates src/headers/codes.hpp (from protocol.inc) and src/headers/messages_embed.hpp
+# # (from shell/messages.toml); run this before `cli` whenever either source file changes
+# cli-codegen:
+# 	@echo "[MAKE] Regenerating codes.hpp and messages_embed.hpp..."
+# 	python3 $(CLI_DIR)/scripts/gen_codes.py
+# 	python3 $(CLI_DIR)/scripts/embed_messages.py
+#
+# cli: cli-codegen
+# 	@echo "[MAKE] Compiling Zenith Core BIOS CLI (native Windows / MinGW64)..."
+# 	$(CXX) $(CXXFLAGS) -I$(CLI_DIR) $(CLI_INCS) \
+# 		$(CLI_SRCS) \
+# 		$(CLI_LIBD) $(CLI_LIBS) \
+# 		-o $(CLI_EXE)
+# 	@echo "[MAKE] CLI build complete: $(CLI_EXE)"
+#
+# cli-run: cli
+# 	@echo "[MAKE] Launching the CLI..."
+# 	$(CLI_EXE)
+#
+# cli-clean:
+# 	@echo "[MAKE] Sweeping away the CLI build..."
+# 	rm -f $(CLI_EXE) $(CLI_DIR)/src/headers/messages_embed.hpp $(CLI_DIR)/src/headers/codes.hpp

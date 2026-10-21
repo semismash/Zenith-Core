@@ -1,18 +1,32 @@
+// Zenith Core - core-only Verilator testbench (stage 1: no UART bridge, no CLI)
+//
+// Usage:  obj_dir/Vtop.exe +ROM_HEX=src/firmware/program.hex
+//   rom.sv loads the same file through $readmemh (see its `ifdef VERILATOR block); this TB reads it
+//   as well, only to echo the program and check its size.
+//
+// Every internal signal is reached through DUT->rootp->top__DOT__<name>, which needs the Verilator
+// flag --public-flat-rw (already in the makefile).
+
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <vector>
 #include <memory>
+#include <string>
 #include <iomanip>
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 #include "Vtop.h"
 #include "Vtop___024root.h"
 
-constexpr size_t RAM_SIZE = 65536;
-constexpr size_t MAX_CYCLE_COUNT = 10000; // maximum safe cycle count for CPU before automatically crashing
-constexpr bool AUTO_STOP = true; // automatically injects an 0xFFFFFFFF word in the end of the program to signal the CPU simulation to stop at the end
-constexpr size_t PIPELINE_STAGES = 5;
+constexpr size_t   ROM_SIZE_BYTES   = 8192;   // must match rv32i.sv / rom.sv
+constexpr size_t   MAX_CYCLE_COUNT  = 10000;  // safety cutoff for a runaway program
+constexpr size_t   PIPELINE_STAGES  = 5;
+constexpr unsigned RESET_CYCLES     = 4;      // clock cycles rst_n is held low before release
+constexpr bool     REGS_ONLY_ON_CHANGE = false; // true: print the register block only in cycles where a register changed
 
 // --- GPR TRACKING CONFIGURATION (Compile-Time Validated) ---
 constexpr int MIN_GPR = 1; // inclusive
@@ -32,163 +46,221 @@ namespace std {
     }
 }
 
+// "0x" + 8 hex digits
+static std::string hex32(uint32_t v) {
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "0x%08x", static_cast<unsigned>(v));
+    return buf;
+}
+
+// reads a $readmemh style file: one hex word per token, '//' comments and '@addr' lines are skipped
+static bool load_hex_words(const std::string& path, std::vector<uint32_t>& words) {
+    std::ifstream f(path);
+    if (!f.is_open()) return false;
+    std::string line;
+    while (std::getline(f, line)) {
+        const auto c = line.find("//");
+        if (c != std::string::npos) line.erase(c);
+        std::istringstream ss(line);
+        std::string tok;
+        while (ss >> tok) {
+            if (tok[0] == '@') continue;
+            words.push_back(static_cast<uint32_t>(std::stoul(tok, nullptr, 16)));
+        }
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     Verilated::traceEverOn(true);
 
-    std::ifstream file("tmp/program.bin", std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        std::cerr << "[TB ERROR] Could not open program binary (program.bin)!" << std::endl;
+    // ---------------------------------------------------------------- program (for echo / size check)
+    std::string hex_path;
+    if (const char* m = Verilated::commandArgsPlusMatch("ROM_HEX"); m && m[0]) {
+        const std::string s(m);
+        const auto eq = s.find('=');
+        if (eq != std::string::npos) hex_path = s.substr(eq + 1);
+    }
+    if (hex_path.empty()) {
+        std::cerr << "[TB ERROR] No program given. Run with +ROM_HEX=<path to program.hex>" << std::endl;
         return -1;
     }
 
-    std::streamsize file_size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::vector<char> ram_buffer(file_size);
-    if (!file.read(ram_buffer.data(), file_size)) {
-        std::cerr << "[TB ERROR] Failed to read program.bin content." << std::endl;
+    std::vector<uint32_t> words;
+    if (!load_hex_words(hex_path, words)) {
+        std::cerr << "[TB ERROR] Could not open " << hex_path << std::endl;
+        return -1;
+    }
+    if (words.size() * 4 > ROM_SIZE_BYTES) {
+        std::cerr << "[TB ERROR] Program (" << words.size() * 4 << " bytes) exceeds the "
+                  << ROM_SIZE_BYTES << " byte ROM!" << std::endl;
         return -1;
     }
 
     std::cout << "========================================================" << std::endl;
-    std::cout << "[TB] VERIFYING PROGRAM.BIN BYTES (LITTLE-ENDIAN WORDS):" << std::endl;
+    std::cout << "[TB] PROGRAM " << hex_path << " (" << words.size() << " words):" << std::endl;
     std::cout << "--------------------------------------------------------" << std::endl;
-    for (size_t i = 0; i < ram_buffer.size(); i += 4) {
-        std::cout << "Addr 0x" << std::hex << std::setw(8) << std::setfill('0') << i << ": 0x";
-        for (int b = 3; b >= 0; --b) {
-            if (i + b < ram_buffer.size()) {
-                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8_t)ram_buffer[i + b];
-            } else {
-                std::cout << "00";
-            }
-        }
-        std::cout << std::endl;
+    for (size_t i = 0; i < words.size(); ++i) {
+        std::cout << "Addr " << hex32(static_cast<uint32_t>(i * 4)) << ": " << hex32(words[i]) << std::endl;
     }
     std::cout << "========================================================\n" << std::endl;
 
+    // ---------------------------------------------------------------- DUT
     auto DUT = std::make_unique<Vtop>();
     auto trace = std::make_unique<VerilatedVcdC>();
     DUT->trace(trace.get(), 99);
     trace->open("waveform.vcd");
+    Vtop___024root& r = *DUT->rootp;
 
-    if (file_size > RAM_SIZE) {
-        std::cerr << "[TB ERROR] Binary size exceeds 64KB limit!" << std::endl;
-        return -1;
-    }
-    
-    for (size_t i = 0; i < ram_buffer.size(); ++i) {
-        DUT->rootp->top__DOT__u_instr_mem__DOT__container[i] = ram_buffer[i]; // initialize program into instruction memory
-        DUT->rootp->top__DOT__u_data_mem__DOT__container[i] = ram_buffer[i];  // if any data intiialization left via .word directives
-    }
-
-    if (AUTO_STOP && (ram_buffer.size() + 4 <= RAM_SIZE)) {
-        for (size_t b = 0; b < 4; ++b) {
-            DUT->rootp->top__DOT__u_instr_mem__DOT__container[ram_buffer.size() + b] = (char)0xFF;
-        }
-    }
-
-    // reset in the beginning to initialize, and set clk to 0
-    DUT->rst_n = 0;
-    DUT->clk = 0;
-    DUT->eval(); 
-    trace->dump(0);
-    
-    DUT->rst_n = 1;
-    DUT->eval(); 
-    std::cout << "[TB] Reset de-asserted. Commencing execution loop..." << std::endl;
-
-    uint64_t cycles = 0;
-    uint64_t sim_time = 1;
-
-    // Start benchmark clocking session right before loop initialization
-    auto start_wall_time = std::chrono::high_resolution_clock::now();
-
-    while (!Verilated::gotFinish() && !DUT->halt && !DUT->stop) {
+    uint64_t sim_time = 0;
+    // one full clock period; leaves clk high
+    auto tick = [&]() {
         DUT->clk = 0;
         DUT->eval();
         trace->dump(sim_time++);
-
         DUT->clk = 1;
         DUT->eval();
         trace->dump(sim_time++);
+    };
+
+    // The first eval() runs the initial blocks (rom.sv's $readmemh), so nothing may be poked into
+    // the memories before it - the program comes in through +ROM_HEX instead.
+    DUT->i_rx  = 1;   // UART idles high; left at 0 it would look like a permanent start bit
+    DUT->rst_n = 0;
+    DUT->clk   = 0;
+    DUT->eval();
+    trace->dump(sim_time++);
+
+    for (unsigned i = 0; i < RESET_CYCLES; ++i) tick();
+    DUT->rst_n = 1;
+    // top.sv releases core_rst_n two cpu_clk edges after rst_n (2-flop synchronizer)
+    for (unsigned guard = 0; !r.top__DOT__core_rst_n && guard < 16; ++guard) tick();
+    if (!r.top__DOT__core_rst_n) {
+        std::cerr << "[TB ERROR] core_rst_n never released!" << std::endl;
+        return -1;
+    }
+    std::cout << "[TB] Reset released. Commencing execution loop..." << std::endl;
+
+    // ---------------------------------------------------------------- main loop
+    uint64_t cycles = 0;
+    bool timed_out = false;
+    uint32_t prev_regs[32] = {0};
+
+    auto start_wall_time = std::chrono::high_resolution_clock::now();
+
+    while (!Verilated::gotFinish() && !r.top__DOT__halt && !r.top__DOT__stop) {
+        tick();
         cycles++;
 
-        uint32_t current_pc    = DUT->rootp->top__DOT__if_addr;
-        uint32_t instruction   = DUT->rootp->top__DOT__instr;
-        uint32_t mem_data_addr = DUT->rootp->top__DOT__data_addr;
-        uint32_t mem_wdata     = DUT->rootp->top__DOT__write_data;
-        bool     mem_we        = DUT->rootp->top__DOT__write_enable;
+        // AXI4-Lite handshakes as seen right after the rising edge (they complete at the next edge)
+        const bool if_ar_hs  = r.top__DOT__if_arvalid   && r.top__DOT__if_arready;
+        const bool if_r_hs   = r.top__DOT__if_rvalid    && r.top__DOT__if_rready;
+        const bool d_ar_hs   = r.top__DOT__data_arvalid && r.top__DOT__data_arready;
+        const bool d_aw_hs   = r.top__DOT__data_awvalid && r.top__DOT__data_awready &&
+                               r.top__DOT__data_wvalid  && r.top__DOT__data_wready;
+        const bool d_r_hs    = r.top__DOT__data_rvalid  && r.top__DOT__data_rready;
+        const bool d_b_hs    = r.top__DOT__data_bvalid  && r.top__DOT__data_bready;
+
+        bool regs_changed = false;
+        for (int i = MIN_GPR; i <= MAX_GPR; ++i) {
+            const uint32_t v = r.top__DOT__u_cpu__DOT__u_reg_file__DOT__registers[i];
+            if (v != prev_regs[i]) regs_changed = true;
+            prev_regs[i] = v;
+        }
 
         std::cout << "\n========================================================" << std::endl;
-        std::cout << "[CYCLE " << std::dec << cycles << "]  Executing at PC: 0x" 
-                  << std::hex << std::setw(8) << std::setfill('0') << current_pc << std::endl;
-        std::cout << " -> Raw Instruction Hex:  0x" << std::setw(8) << instruction << std::endl;
-        std::cout << " -------------------- REGISTER FILE --------------------" << std::endl;
-        
-        int printed_in_row = 0;
-        std::cout << " -> ";
-        for (int r = MIN_GPR; r <= MAX_GPR; ++r) {
-            uint32_t reg_val = DUT->rootp->top__DOT__u_cpu__DOT__u_reg_file__DOT__registers[r];
-            
-            // format register number to always use 2 digits with zero-padding (e.g., x01, x12)
-            std::cout << "x" << std::dec << std::setw(2) << std::setfill('0') << r << ": 0x" 
-                      << std::hex << std::setw(8) << std::right << std::setfill('0') << reg_val;
-            
-            printed_in_row++;
-            if (printed_in_row == 4 && r != MAX_GPR) {
-                std::cout << "\n -> ";
-                printed_in_row = 0;
-            } else if (r != MAX_GPR) {
-                std::cout << " | ";
-            }
+        std::cout << "[CYCLE " << std::dec << cycles << "]" << std::endl;
+        std::cout << " -> Fetch : AR " << (if_ar_hs ? hex32(r.top__DOT__if_araddr) : std::string("idle      "))
+                  << " | R " << (if_r_hs ? hex32(r.top__DOT__if_rdata) : std::string("idle")) << std::endl;
+
+        std::cout << " -> Data  : ";
+        if (d_aw_hs) {
+            std::cout << "WRITE " << hex32(r.top__DOT__data_awaddr) << " <- " << hex32(r.top__DOT__data_wdata)
+                      << " strb=0x" << std::hex << static_cast<unsigned>(r.top__DOT__data_wstrb) << std::dec;
+        } else if (d_ar_hs) {
+            std::cout << "READ  " << hex32(r.top__DOT__data_araddr);
+        } else {
+            std::cout << "idle";
         }
+        if (d_r_hs) std::cout << " | R " << hex32(r.top__DOT__data_rdata);
+        if (d_b_hs) std::cout << " | B resp=" << static_cast<unsigned>(r.top__DOT__data_bresp);
         std::cout << std::endl;
 
-        std::cout << " ----------------------- CONTROLS ----------------------" << std::endl;
-        std::cout << " -> Data Memory Access:   [" << (mem_we ? "WRITE" : "READ") << "] "
-                  << "Addr: 0x" << mem_data_addr << " | WData: 0x" << mem_wdata << std::endl;
+        if (!REGS_ONLY_ON_CHANGE || regs_changed) {
+            std::cout << " -------------------- REGISTER FILE --------------------" << std::endl;
+            int printed_in_row = 0;
+            std::cout << " -> ";
+            for (int i = MIN_GPR; i <= MAX_GPR; ++i) {
+                // format register number to always use 2 digits with zero-padding (e.g., x01, x12)
+                std::cout << "x" << std::dec << std::setw(2) << std::setfill('0') << i << ": "
+                          << hex32(prev_regs[i]);
+                printed_in_row++;
+                if (printed_in_row == 4 && i != MAX_GPR) {
+                    std::cout << "\n -> ";
+                    printed_in_row = 0;
+                } else if (i != MAX_GPR) {
+                    std::cout << " | ";
+                }
+            }
+            std::cout << std::endl;
+        }
 
-        if (cycles > MAX_CYCLE_COUNT) {
+        if (cycles >= MAX_CYCLE_COUNT) {
             std::cout << "\n[TB WARNING] Safety simulation cutoff breached!" << std::endl;
+            timed_out = true;
             break;
         }
     }
 
-    // Stop wall-clock timing right as simulation drops out
     auto end_wall_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_seconds = end_wall_time - start_wall_time;
 
+    // ---------------------------------------------------------------- end-of-run report
+    const bool halted     = r.top__DOT__halt;
+    const bool stopped    = r.top__DOT__stop;
+    const unsigned led    = DUT->led;                 // [0] stop, [1] instr fault, [2] data fault, [3] illegal instr
+    const bool any_fault  = (led & 0xE) != 0;
+
     std::cout << "\n========================================================" << std::endl;
-    if (DUT->halt) {
+    if (halted) {
         std::cout << "[TB INFO] CPU core crashed safely and generated a HALT signal." << std::endl;
-        std::cout << "[FINAL STATUS]" << std::endl;
-        std::cout << " -> Final Data Address: 0x" << std::hex << DUT->rootp->top__DOT__data_addr << std::endl;
-        std::cout << " -> Final Data Out:     0x" << std::hex << DUT->rootp->top__DOT__write_data << std::endl;
-    } else if (DUT->stop) {
-        std::cout << "[TB INFO] CPU core stopped safety and reached a safe STOP signal." << std::endl;
-        std::cout << "[FINAL STATUS]" << std::endl;
-        std::cout << " -> Final Data Address: 0x" << std::hex << DUT->rootp->top__DOT__data_addr << std::endl;
-        std::cout << " -> Final Data Out:     0x" << std::hex << DUT->rootp->top__DOT__write_data << std::endl;
+    } else if (stopped) {
+        std::cout << "[TB INFO] CPU core reached a safe STOP signal." << std::endl;
+    } else if (timed_out) {
+        std::cout << "[TB INFO] Simulation hit the " << MAX_CYCLE_COUNT << " cycle cutoff (no stop/halt)." << std::endl;
     } else {
         std::cout << "[TB INFO] Simulation finished processing." << std::endl;
     }
+    std::cout << "[FINAL STATUS]" << std::endl;
+    std::cout << " -> halt: " << halted << " | stop: " << stopped << std::endl;
+    std::cout << " -> LEDs: stop=" << (led & 1) << " instr_fault=" << ((led >> 1) & 1)
+              << " data_fault=" << ((led >> 2) & 1) << " illegal_instr=" << ((led >> 3) & 1) << std::endl;
+    std::cout << " -> Last fetch addr: " << hex32(r.top__DOT__if_araddr) << std::endl;
 
-    // Capture telemetry signals directly from the new hardware output ports
-    uint32_t total_retired_instr = DUT->meta_instr_count;
-    uint32_t total_stalls        = DUT->meta_stall_count;
-    uint32_t load_use_stalls     = DUT->meta_l_use_count;
-    uint32_t branch_flushes      = DUT->meta_br_flush_count;
+    std::cout << "\n------------------- FINAL REGISTER FILE -------------------" << std::endl;
+    for (int i = 1; i < 32; ++i) {
+        std::cout << "x" << std::dec << std::setw(2) << std::setfill('0') << i << ": "
+                  << hex32(r.top__DOT__u_cpu__DOT__u_reg_file__DOT__registers[i])
+                  << ((i % 4 == 0) ? "\n" : " | ");
+    }
+    std::cout << std::endl;
 
     std::cout << "\n------------------- PERFORMANCE METRICS -------------------" << std::endl;
     std::cout << "Total Clock Cycles:       " << std::dec << cycles << std::endl;
+
+#ifdef HAVE_TELEMETRY
+    // needs MetaCount signals declared (public_flat_rw) in top.sv and hooked to the core, see notes
+    uint32_t total_retired_instr = r.top__DOT__meta_instr_count;
+    uint32_t total_stalls        = r.top__DOT__meta_stall_count;
+    uint32_t load_use_stalls     = r.top__DOT__meta_l_use_count;
+    uint32_t branch_flushes      = r.top__DOT__meta_br_flush_count;
+
     std::cout << "Instructions Retired:     " << total_retired_instr << std::endl;
-    
     if (total_retired_instr > 0) {
         uint64_t steady_state_cycles = (cycles > (PIPELINE_STAGES - 1)) ? (cycles - (PIPELINE_STAGES - 1)) : 0;
-        
-        double cpi_clean = static_cast<double>(cycles) / total_retired_instr;
+        double cpi_clean  = static_cast<double>(cycles) / total_retired_instr;
         double cpi_steady = static_cast<double>(steady_state_cycles) / total_retired_instr;
-        
         std::cout << "Measured CPI (w/ Overhead): " << std::fixed << std::setprecision(2) << cpi_clean << std::endl;
         std::cout << "Steady-State CPI (True):    " << std::fixed << std::setprecision(2) << cpi_steady << std::endl;
     } else {
@@ -204,14 +276,17 @@ int main(int argc, char** argv) {
     } else {
         std::cout << " (0.0%)" << std::endl;
     }
-
     std::cout << " -> Load-Use Stalls:      " << load_use_stalls << std::endl;
     std::cout << " -> Structural/ALU Stalls:" << (total_stalls - load_use_stalls) << std::endl;
     std::cout << "Total Branch Flush Cycles:" << branch_flushes << std::endl;
+#else
+    (void)PIPELINE_STAGES;
+    std::cout << "Telemetry:                not exposed (build with 'make compile TELEMETRY=1' once top.sv exports meta_*)" << std::endl;
+#endif
 
     std::cout << " ------------------- SIMULATION SPEED ---------------------" << std::endl;
     std::cout << "Elapsed Compute Time:     " << std::fixed << std::setprecision(6) << elapsed_seconds.count() << " seconds" << std::endl;
-    
+
     if (elapsed_seconds.count() > 0.0) {
         double sim_hz = static_cast<double>(cycles) / elapsed_seconds.count();
         if (sim_hz >= 1000000.0) {
@@ -228,5 +303,9 @@ int main(int argc, char** argv) {
 
     trace->close();
     DUT->final();
+
+    // exit code: 0 = clean stop, 1 = halt or fault, 2 = timeout
+    if (halted || any_fault) return 1;
+    if (timed_out) return 2;
     return 0;
 }

@@ -257,7 +257,7 @@ module rv32i_core (
 
     assign pc_plus4  = id_ex_pc + 32'd4;
     assign ex_result = (id_ex_is_jal || id_ex_is_jalr) ? pc_plus4 : alu_out;
-gns
+
     assign data_fetch_valid = !mem_stage_busy;
     assign wb_rdata         = wb_cap_valid ? wb_cap_data : data_rdata_in;              
     assign wb_rresp         = wb_cap_valid ? wb_cap_resp : data_rresp_in;              

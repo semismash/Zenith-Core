@@ -42,7 +42,14 @@ module rom #(   // currently houses only the bootloader
 
     Word container [ROM_WORDS - 1:0];
     initial begin
+`ifdef VERILATOR
+        // simulation: the testbench passes the program with +ROM_HEX=<path> (one 32-bit hex word per line)
+        string hex_file;
+        if (!$value$plusargs("ROM_HEX=%s", hex_file)) hex_file = "bios.hex";
+        $readmemh(hex_file, container);
+`else
         $readmemh("bios.hex", container);    // PLACEHOLDER PATH TO BIOS BINARY
+`endif
     end
 
     assign if_arready   = 1'b1;     // always accepts (single-cycle address handshake)

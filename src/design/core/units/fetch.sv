@@ -10,10 +10,10 @@ module fetch #(
     input logic clk,
     input logic rst_n,
     input logic stall,
-    : redirect from EX (taken branch / JAL / JALR)
+    // redirect from EX (taken branch / JAL / JALR)
     input logic redirect,
     input Word  redirect_pc,
-    : AXI4-Lite read master (instruction port, read-only, no write channels)
+    // AXI4-Lite read master (instruction port, read-only, no write channels)
     output Word  if_araddr,
     output logic if_arvalid,
     input  logic if_arready,
@@ -27,6 +27,9 @@ module fetch #(
     output logic mem_fault,     // mem fault = rresp[1] | misaligned PC, carried through IF/ID
     output logic fetch_valid    // an instruction is delivered to IF/ID this cycle (was a passthrough of instr_valid)
 );
+
+    localparam int PTR_W = (MAX_OUTSTANDING > 1) ? $clog2(MAX_OUTSTANDING) : 1;         // FIFO pointer width
+    localparam int CNT_W = $clog2(MAX_OUTSTANDING + 1);                                 // FIFO count width
 
     // request PC
     Word  req_pc;                   // next sequential fetch address
@@ -68,8 +71,6 @@ module fetch #(
     assign redirect_eff = redirect && !stall;                                           
     assign space        = (int'(inflight) + int'(cap_cnt)) < MAX_OUTSTANDING;           // registered state only, no path from RVALID to ARVALID
 
-    localparam int PTR_W = (MAX_OUTSTANDING > 1) ? $clog2(MAX_OUTSTANDING) : 1;         // FIFO pointer width
-    localparam int CNT_W = $clog2(MAX_OUTSTANDING + 1);                                 // FIFO count width
 
     function automatic logic [PTR_W-1:0] ptr_inc(input logic [PTR_W-1:0] p);            // wrap-around pointer increment
         return (int'(p) == MAX_OUTSTANDING - 1) ? '0 : p + 1'b1;                        // see above
