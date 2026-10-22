@@ -75,3 +75,4 @@ hazard_unit_old.sv
 .modified/
 local/
 obj_dir/
+tmp/
