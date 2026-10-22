@@ -75,4 +75,7 @@ hazard_unit_old.sv
 .modified/
 local/
 obj_dir/
+obj_dir_bridge/
 tmp/
+.vscode/
+build/

@@ -1,7 +1,0 @@
-{
-"files.exclude": {
-    "**/rv32i_types.sv": true,
-    "**/rv32i_types.v": true
-},
-"cmake.sourceDirectory": "C:/ExecutionEngine/riscVia-fpga/replxx"
-}
