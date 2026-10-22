@@ -47,6 +47,7 @@ namespace cmdparse_mod {
                 std::optional<std::string> log_arg{};
                 std::vector<std::string> echo_words{};
                 bool echo_terminal{false};
+                std::vector<std::string> sendmsg_words{};
                 std::optional<std::string> info_list{};
                 std::string sendbyte_value{};
                 std::optional<std::string> sendbytes_list{};
@@ -72,6 +73,7 @@ namespace cmdparse_mod {
                 CLI::App* monitor{nullptr};
                 CLI::App* log{nullptr};
                 CLI::App* echo{nullptr};
+                CLI::App* sendmsg{nullptr};
                 CLI::App* deviceinfo{nullptr};
                 CLI::App* sync{nullptr};
                 CLI::App* sendbyte{nullptr};

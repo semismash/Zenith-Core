@@ -202,6 +202,12 @@ namespace analyze_mod {
                 if (c.msg.size() > ECHO_BUF_SIZE) return std::unexpected(Error(SemErr::EchoTooLong, std::to_string(c.msg.size())));
                 return {};
             },
+            [this, &ctx](const CommandSendMsg& c) -> std::expected<void, Error> {
+                if (auto res = require_transport(ctx); !res) return res;
+                if (ctx.snap.state != SessionState::ProgramRunning) return std::unexpected(Error(SemErr::ProgramNotRunning));
+                if (c.msg.empty()) return std::unexpected(Error(SemErr::EchoEmpty));
+                return {};
+            },
             [this, &ctx](const CommandSelfTest&) -> std::expected<void, Error> { return require_bios(ctx, true); },
             [this, &ctx](const CommandTelemetry&) -> std::expected<void, Error> { return require_bios(ctx, false); },
             [this, &ctx](const CommandTelemetryStatus&) -> std::expected<void, Error> { return require_bios(ctx, false); },

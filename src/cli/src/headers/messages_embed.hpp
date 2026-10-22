@@ -75,6 +75,7 @@ program_start = "program running (only sendbyte, sendbytes and client commands u
 program_done = "program finished"
 program_stuck = "the program is still running. If it is stuck, reset the CPU (board button on the FPGA, `reset` in sim)."
 dump_progress = "[dump] {}/{} bytes"
+load_progress = "Progress: {}%"
 load_complete = "program loaded: {} bytes at 0x{:08X}"
 verify_pass = "verify: PASS ({} bytes match)"
 verify_fail = "verify: MISMATCH, first difference at 0x{:08X}"
@@ -181,7 +182,7 @@ Zenith Core BIOS CLI commands (`help <command>` for details)
  memory       hexdump --offset=ADDR --size=COUNT
  telemetry    telemetry --mode= --reset= -r, status [-t | --telemetry=[cycles, instr, stall, stallpcnt, cpi, loaduse, brflush]]
  device       deviceinfo [--info=[arch, reg, rom, ram, mem, clk, baud]], sync, selftest
- raw bytes    sendbyte <byte>, sendbytes --bytes=[b0, b1, ...] --interval=N
+ raw bytes    sendbyte <byte>, sendbytes --bytes=[b0, b1, ...] --interval=N, sendmsg "message" (program running only)
  display      monitor [on|off], log [on|off], echo "message" [-t], clear
  other        help, about, github, exit / quit
 
@@ -245,6 +246,11 @@ Prints BIOS state changes as [BIOS STATE]. Client side only, the BIOS always sen
 echo = '''
 echo "message" [-t]
 Sends the message to the BIOS (1 to 256 bytes), it is echoed back. -t prints it locally without the BIOS.'''
+sendmsg = '''
+sendmsg "message"
+Only while a program is running. Sends the message straight to the running program's UART RX as a
+0x3D length-prefixed frame (no 0x3A prefix, no BIOS reply expected) - for testing string input/parsing
+in your own program.'''
 deviceinfo = '''
 deviceinfo [--info=[arch, reg, rom, ram, mem, clk, baud]]
 Device data from the BIOS, everything by default.'''
@@ -296,6 +302,7 @@ sim_only = "error: `{}` is only available in the sim profile"
 fpga_only = "error: `{}` is only available in the fpga profile"
 not_idle = "error: the BIOS is busy"
 program_running = "error: a program is running, only sendbyte, sendbytes and client commands work until it finishes"
+program_not_running = "error: sendmsg only works while a program is running"
 limited_state = "error: the BIOS is in the limited POST-fail state, only `connect` and `selftest` work"
 raw_pending = "error: {} raw byte(s) are still waiting to be sent (`sendbytes` lists them)"
 switch_not_allowed = "error: `switch` only works while disconnected or idle"

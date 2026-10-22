@@ -16,8 +16,10 @@
 //   +BAUD=<n>           UART baud rate, must match UART_BAUD_RATE in uart.sv (default 9600)
 //   +POLL=<n>           cycles between socket polls (default 256)
 //   +NOWAIT             do not hold the core in reset until the first CLI connects
+//   +THROTTLE_US=<n>    spin n microseconds after every socket poll, i.e. deliberately slow the sim down (to reproduce
+//                       "the CLI feeds faster than the sim consumes" without depending on the machine)
 //   +BRIDGE_LOG         print every UART byte with the cycle it happened in
-//   +TRACE              write waveform_bridge.vcd (huge, only for short runs)
+//   +TRACE              write waveform_bridge.vcd (huge, only for short runs; needs a build with BRIDGE_TRACE=1)
 //
 // Every internal signal is reached through DUT->rootp->top__DOT__..., which needs --public-flat-rw (already in the makefile).
 
@@ -30,7 +32,9 @@
 #include <memory>
 #include <string>
 #include <verilated.h>
+#ifdef BRIDGE_TRACE
 #include <verilated_vcd_c.h>
+#endif
 #include "Vtop.h"
 #include "Vtop___024root.h"
 #include "uart_bridge.hpp"
@@ -84,8 +88,13 @@ int main(int argc, char** argv) {
     const unsigned reset_port = plusarg_uint("RESET_PORT", 5556);
     const unsigned baud       = plusarg_uint("BAUD", UART_BAUD_DEF);
     const unsigned poll_every = plusarg_uint("POLL", 256);
+    const unsigned throttle_us = plusarg_uint("THROTTLE_US", 0);
     const bool     wait_cli   = !has_plusarg("NOWAIT");
+#ifdef BRIDGE_TRACE
     const bool     trace_on   = has_plusarg("TRACE");
+#else
+    if (has_plusarg("TRACE")) std::printf("[BRIDGE] +TRACE ignored: rebuild with BRIDGE_TRACE=1 for waveforms\n");
+#endif
     g_log                     = has_plusarg("BRIDGE_LOG");
     // same arithmetic as baud_rate_gen (integer divide) x oversampling: one bit lasts this many CPU clocks
     const unsigned bit_cycles = (CPU_CLOCK_HZ / (baud * UART_SAMPLING)) * UART_SAMPLING;
@@ -98,14 +107,21 @@ int main(int argc, char** argv) {
     bridge.link().on_rx_started(log_rx);
     bridge.link().on_tx_decoded(log_tx);
 
+#ifdef BRIDGE_TRACE
     if (trace_on) Verilated::traceEverOn(true);
+#endif
     auto DUT = std::make_unique<Vtop>();
+#ifdef BRIDGE_TRACE
     std::unique_ptr<VerilatedVcdC> trace;
     if (trace_on) {
         trace = std::make_unique<VerilatedVcdC>();
         DUT->trace(trace.get(), 99);
         trace->open("waveform_bridge.vcd");
     }
+    #define TRACE_DUMP() do { if (trace) trace->dump(sim_time); } while (0)
+#else
+    #define TRACE_DUMP() do { } while (0)
+#endif
     Vtop___024root& r = *DUT->rootp;
 
     // reset the design clears RAM from C++ (ROM is never touched, it holds the BIOS)
@@ -118,10 +134,10 @@ int main(int argc, char** argv) {
         DUT->i_rx = rx_level;
         DUT->clk = 0;
         DUT->eval();
-        if (trace) trace->dump(sim_time++);
+        TRACE_DUMP(); ++sim_time;
         DUT->clk = 1;
         DUT->eval();
-        if (trace) trace->dump(sim_time++);
+        TRACE_DUMP(); ++sim_time;
         ++g_cycles;
         if (with_bridge) rx_level = bridge.clock(DUT->o_tx);
     };
@@ -131,7 +147,7 @@ int main(int argc, char** argv) {
     DUT->rst_n = 0;
     DUT->clk   = 0;
     DUT->eval();
-    if (trace) trace->dump(sim_time++);
+    TRACE_DUMP(); ++sim_time;
 
     auto do_reset = [&](bool wipe_ram) {
         DUT->rst_n = 0;
@@ -150,6 +166,7 @@ int main(int argc, char** argv) {
     std::printf("[BRIDGE] UART      : %u baud, %u cycles per bit\n", baud, bit_cycles);
     std::printf("[BRIDGE] data      : 127.0.0.1:%u\n", data_port);
     std::printf("[BRIDGE] reset     : 127.0.0.1:%u  (\"RESET\\n\" -> \"OK\\n\")\n", reset_port);
+    if (throttle_us) std::printf("[BRIDGE] throttle  : %u us spin per poll (the sim is slowed on purpose)\n", throttle_us);
     std::printf("[BRIDGE] Ctrl+C quits\n");
 
     if (wait_cli) {
@@ -179,6 +196,10 @@ int main(int argc, char** argv) {
         since_poll = 0;
 
         bridge.poll();
+        if (throttle_us) {          // busy wait: Sleep() would be rounded to the Windows timer tick
+            const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(throttle_us);
+            while (std::chrono::steady_clock::now() < until) { }
+        }
         if (bridge.take_reset_request()) {
             do_reset(true);
             bridge.reset_complete();
@@ -211,7 +232,9 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(bridge.link().rx_frames()), static_cast<unsigned long long>(bridge.link().tx_frames()),
                 static_cast<unsigned long long>(bridge.link().tx_framing_errors()));
 
+#ifdef BRIDGE_TRACE
     if (trace) trace->close();
+#endif
     DUT->final();
     return 0;
 }

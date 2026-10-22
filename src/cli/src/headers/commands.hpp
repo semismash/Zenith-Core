@@ -79,6 +79,12 @@ namespace commands {
         bool terminal_echo;
     };
 
+    // like echo, but sent directly into the running program's UART RX: no 0x3A prefix, no BIOS reply
+    // expected (whatever the program does with it is up to the program). Program-running only.
+    struct CommandSendMsg {
+        std::string msg;
+    };
+
     struct CommandDeviceInfo {
         std::set<DeviceDataParam> device_data_args;    // empty = everything
     };
@@ -117,7 +123,7 @@ namespace commands {
         CommandConfig, CommandSwitch, CommandReset, CommandNet,
         CommandScan, CommandConnect, CommandLoad, CommandRun,
         CommandVerify, CommandTelemetry, CommandMonitor, CommandLog,
-        CommandEcho, CommandDeviceInfo, CommandSync, CommandSendByte,
+        CommandEcho, CommandSendMsg, CommandDeviceInfo, CommandSync, CommandSendByte,
         CommandSendByteList, CommandTelemetryStatus, CommandSelfTest, CommandHexDump,
         CommandClear, CommandHelp, CommandAbout, CommandGitHub, CommandExit
     >;

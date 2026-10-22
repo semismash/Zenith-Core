@@ -101,6 +101,7 @@ namespace responses {
         std::optional<std::pair<uint32_t, uint32_t>> sizes;     // read back vs expected, if they differ
     };
     struct EvLoadComplete { uint32_t offset; uint32_t size; };
+    struct EvLoadProgress { uint32_t percent; };    // client-side only: how much of the load's bytes the writer has sent so far
     struct EvDeviceData {
         DeviceData data;
         std::set<commands::DeviceDataParam> filter;
@@ -112,7 +113,7 @@ namespace responses {
         EvUnsolicited, EvCooldownStart, EvCooldownEnd, EvMessage, EvProgramOutput,
         EvProgramStart, EvProgramDone, EvProgramStillRunning, EvReboot, EvLinkLost,
         EvRawDropped, EvPostResults, EvTelemetrySettings, EvTelemetryApplied, EvTelemetryStatus,
-        EvDumpProgress, EvMemDump, EvVerifyResult, EvLoadComplete, EvDeviceData, EvRegisters
+        EvDumpProgress, EvMemDump, EvVerifyResult, EvLoadComplete, EvLoadProgress, EvDeviceData, EvRegisters
     >;
 
     using Events = std::vector<Event>;

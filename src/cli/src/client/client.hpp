@@ -52,6 +52,7 @@ namespace client_mod {
         size_t chunk;
         Nanos gap;                  // pause after every chunk
         Nanos stall_limit;
+        bool report_progress{false};   // client-side send progress (currently just `load`'s bulk transfer)
     };
 
     struct RawByte {

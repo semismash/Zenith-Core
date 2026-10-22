@@ -51,6 +51,7 @@ namespace shell_mod {
             void do_sync();
             void do_monitor(const commands::CommandMonitor& cmd);
             void do_log(const commands::CommandLog& cmd);
+            void do_sendmsg(const commands::CommandSendMsg& cmd);
             void do_sendbyte(const commands::CommandSendByte& cmd);
             void do_sendbytes(const commands::CommandSendByteList& cmd);
             void do_help(const commands::CommandHelp& cmd);

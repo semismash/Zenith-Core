@@ -998,7 +998,8 @@ namespace client_mod {
         job_taken = true;
         return WriterJob{
             generation, tx_seq, false, active->bytes, profile_mod::Profile::CHUNK_SIZE,
-            profile.chunk_gap(profile_mod::Profile::CHUNK_SIZE), profile.tx_stall_limit()
+            profile.chunk_gap(profile_mod::Profile::CHUNK_SIZE), profile.tx_stall_limit(),
+            active->expect == bytegen_mod::Expect::Load
         };
     }
 

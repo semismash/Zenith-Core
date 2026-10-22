@@ -37,6 +37,7 @@ namespace error {
         FpgaOnly,
         NotIdle,
         ProgramRunning,
+        ProgramNotRunning,
         LimitedState,
         RawQueuePending,
         SwitchNotAllowed,
@@ -129,6 +130,7 @@ namespace error {
                     case SemanticError::FpgaOnly:               return "sema_error.fpga_only";
                     case SemanticError::NotIdle:                return "sema_error.not_idle";
                     case SemanticError::ProgramRunning:         return "sema_error.program_running";
+                    case SemanticError::ProgramNotRunning:      return "sema_error.program_not_running";
                     case SemanticError::LimitedState:           return "sema_error.limited_state";
                     case SemanticError::RawQueuePending:        return "sema_error.raw_pending";
                     case SemanticError::SwitchNotAllowed:       return "sema_error.switch_not_allowed";

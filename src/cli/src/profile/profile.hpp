@@ -28,7 +28,7 @@ namespace profile_mod {
 
             // settings, editable with `config` (see config.cpp)
             uint32_t cooldown_ms{500};
-            double sim_time_scale{1.0};         // wall-clock seconds per simulated second
+            double sim_time_scale{3.0};         // wall-clock seconds per simulated second
             std::string host{"127.0.0.1"};
             uint16_t port{5555};
             uint16_t reset_port{5556};

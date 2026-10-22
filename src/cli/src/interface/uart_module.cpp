@@ -83,10 +83,13 @@ namespace interface_mod {
     // chunks of <= 4 bytes at the profile's pacing, the generation is checked between every chunk
     void Link::send_transaction(const client_mod::WriterJob& job, std::stop_token st) {
         auto next = Clock::now();
+        size_t sent{0};
+        int last_percent{-1};
         for (size_t pos{0}; pos < job.bytes.size(); pos += job.chunk) {
             const auto paced = pace(job.generation, next, job.stall_limit, st);
             if (paced == PaceResult::Abort) {
                 // the reader saw an error: drop whatever is still queued and leave the state alone
+                // (and so the progress counter, reported below, simply stops where it was)
                 std::visit([](auto& t) { t.flush_tx(); }, *transport);
                 return;
             }
@@ -104,6 +107,17 @@ namespace interface_mod {
             const auto now = Clock::now();
             session.note_host_write(now);
             next = now + job.gap;
+
+            if (job.report_progress) {
+                sent += len;
+                const auto percent = static_cast<int>(sent * 100 / job.bytes.size());
+                if (percent != last_percent) {
+                    last_percent = percent;
+                    responses::Events ev{};
+                    ev.push_back(responses::EvLoadProgress{static_cast<uint32_t>(percent)});
+                    sink(std::move(ev));
+                }
+            }
         }
         session.writer_done(job.seq, Clock::now());
     }

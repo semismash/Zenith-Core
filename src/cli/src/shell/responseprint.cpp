@@ -195,6 +195,11 @@ namespace print_mod {
                 emit(msgs.fmt("client.dump_progress", e.received, e.total));
                 if (e.received == e.total) emit("\n");
             },
+            [this](const rsp::EvLoadProgress& e) {
+                if (!at_line_start) emit("\r");
+                emit(msgs.fmt("client.load_progress", e.percent));
+                if (e.percent == 100) emit("\n");
+            },
             [this](const rsp::EvMemDump& e) { render_dump(e.offset, e.data); },
             [this](const rsp::EvVerifyResult& e) {
                 if (e.sizes) emit_line(msgs.fmt("client.verify_size", e.sizes->first, e.sizes->second));

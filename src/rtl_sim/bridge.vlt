@@ -1,0 +1,10 @@
+// Config for the networked simulation: expose ONLY what sim_bridge.cpp touches, instead of the global
+// --public-flat-rw (which keeps every internal signal alive and slows the whole model down).
+// Used with  make bridge-compile BRIDGE_PUBLIC=min
+// If you add a signal access to sim_bridge.cpp (rootp->top__DOT__...), list the signal here too.
+`verilator_config
+public_flat_rw -module "top" -var "core_rst_n"
+public_flat_rw -module "top" -var "stop"
+public_flat_rw -module "top" -var "halt"
+public_flat_rw -module "top" -var "if_araddr"
+public_flat_rw -module "ram" -var "container"

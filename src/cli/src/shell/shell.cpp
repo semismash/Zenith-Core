@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 
+#include "../headers/codes.hpp"
 #include "../headers/overload.hpp"
 
 namespace shell_mod {
@@ -130,6 +131,7 @@ namespace shell_mod {
             [this](const CommandSync&) { do_sync(); },
             [this](const CommandMonitor& c) { do_monitor(c); },
             [this](const CommandLog& c) { do_log(c); },
+            [this](const CommandSendMsg& c) { do_sendmsg(c); },
             [this](const CommandSendByte& c) { do_sendbyte(c); },
             [this](const CommandSendByteList& c) { do_sendbytes(c); },
             [this](const CommandHelp& c) { do_help(c); },
@@ -327,6 +329,19 @@ namespace shell_mod {
     void Shell::do_log(const commands::CommandLog& cmd) {
         if (cmd.is_log) session.set_log(*cmd.is_log);
         printer.say("shell.log_status", msgs.get(session.snapshot().log_on ? "word.on" : "word.off"));
+    }
+
+    // same frame as echo's (0x3D, 4-byte LE length, ascii), minus the leading 0x3A: this isn't a BIOS
+    // command, it goes straight into the running program's UART RX, so there's no BIOS reply to wait for
+    void Shell::do_sendmsg(const commands::CommandSendMsg& cmd) {
+        std::vector<uint8_t> bytes{bios_protocol::TB_MSG_STR};
+        bytegen_mod::put_u32(bytes, static_cast<uint32_t>(cmd.msg.size()));
+        bytes.insert(bytes.end(), cmd.msg.begin(), cmd.msg.end());
+        if (auto res = session.enqueue_raw(bytes, profiles.active().chunk_gap(1)); !res) {
+            printer.error(res.error());
+            return;
+        }
+        printer.say("shell.raw_queued", bytes.size());
     }
 
     void Shell::do_sendbyte(const commands::CommandSendByte& cmd) {

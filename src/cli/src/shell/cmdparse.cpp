@@ -215,7 +215,7 @@ namespace cmdparse_mod {
     const std::vector<std::string>& CommandParser::command_names() {
         static const std::vector<std::string> names{
             "about", "clear", "config", "connect", "deviceinfo", "echo", "exit", "github", "help", "hexdump",
-            "load", "log", "monitor", "net", "quit", "reset", "run", "scan", "selftest", "sendbyte", "sendbytes",
+            "load", "log", "monitor", "net", "quit", "reset", "run", "scan", "selftest", "sendbyte", "sendbytes", "sendmsg",
             "status", "switch", "sync", "telemetry", "verify"
         };
         return names;
@@ -273,6 +273,9 @@ namespace cmdparse_mod {
         subs.echo = app.add_subcommand("echo");
         subs.echo->add_option("message", st.echo_words);
         subs.echo->add_flag("-t", st.echo_terminal);
+
+        subs.sendmsg = app.add_subcommand("sendmsg");
+        subs.sendmsg->add_option("message", st.sendmsg_words)->required();
 
         subs.deviceinfo = app.add_subcommand("deviceinfo");
         subs.deviceinfo->add_option("--info", st.info_list);
@@ -414,6 +417,15 @@ namespace cmdparse_mod {
                 msg += st.echo_words[i];
             }
             return Command{CommandEcho{ std::move(msg), st.echo_terminal }};
+        }
+
+        if (app.got_subcommand(subs.sendmsg)) {
+            std::string msg{};
+            for (size_t i{0}; i < st.sendmsg_words.size(); ++i) {
+                if (i > 0) msg.push_back(' ');
+                msg += st.sendmsg_words[i];
+            }
+            return Command{CommandSendMsg{ std::move(msg) }};
         }
 
         if (app.got_subcommand(subs.deviceinfo)) {

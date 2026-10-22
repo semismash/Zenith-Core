@@ -15,6 +15,10 @@
 #   make asm PROG=t_mem           programs/t_mem.s -> build/programs/t_mem.hex   (linked at 0x2000, no stop word)
 #   make asm PROG=t_mem TEXT_BASE=0x3000    link for another load offset
 #
+# C programs (programs/<PROG>.c + the runtime in src/runtime: crt0, UART stubs, z_gets/z_puts in zenith.h)
+#   make cprog PROG=c_demo        programs/c_demo.c -> build/programs/c_demo.hex   (same place/format as `make asm`)
+#   make runtime-selftest         host-side test of z_gets/z_puts, libc_min.c and the C demo logic (no RISC-V needed)
+#
 # Core-only simulation (no BIOS: the program is the ROM image)
 #   make run PROG=test_alu        build/programs/test_alu.rom.hex (linked at 0x0 + 0xFFFFFFFF stop word), build, run
 #   make rom-asm PROG=test_alu    assemble the ROM image only
@@ -80,7 +84,7 @@ WINSOCK_LIBS := $(if $(filter Windows_NT,$(OS)),-lws2_32,)
 PKG_SRCS     = $(DESIGN_DIR)/rv32i.sv $(DESIGN_DIR)/uart.sv
 VERILOG_SRCS = $(PKG_SRCS) $(filter-out $(PKG_SRCS),$(sort $(shell find $(DESIGN_DIR) -name '*.sv')))
 
-.PHONY: all help asm rom-asm prog-build compile run sim bios bios-sim bios-build \
+.PHONY: all help asm rom-asm prog-build cprog runtime-selftest compile run sim bios bios-sim bios-build \
         bridge-compile bridge-run bridge-sim bridge-selftest \
         cli cli-codegen cli-run cli-clean clean clean-programs
 
@@ -132,6 +136,70 @@ prog-build:
 	@od -An -v -tx4 -w4 $(PROG_OUT)/$(PB_TAG).bin | tr -d ' ' > $(PROG_OUT)/$(PB_TAG).hex
 	@$(if $(filter 1,$(PB_STOP)),echo ffffffff >> $(PROG_OUT)/$(PB_TAG).hex,true)
 	@echo "[MAKE] Done: $(PROG_OUT)/$(PB_TAG).hex  (disassembly: $(PROG_OUT)/$(PB_TAG).lst)"
+
+# ==================================================================================================
+# C programs
+#   PROG names a file in programs/ (programs/<PROG>.c), built together with the runtime in src/runtime:
+#   crt0.S (startup), uart.S (z_uart_rx/z_uart_tx), libc_min.c (memcpy & co), link.ld. Everything is linked at
+#   PRG_BASE (TEXT_BASE=... overrides it, then load the program at that offset) and ends up in
+#   build/programs/<PROG>.{hex,bin,lst,map}, ready for the CLI's `load`.
+#   rv32i only: * / % and 64-bit math come from the rv32i libgcc of the toolchain.
+# ==================================================================================================
+RT_DIR      = $(SRC_DIR)/runtime
+RT_OBJ_DIR  = $(TMP_DIR)/rt
+RV_CC       = $(RISCV_PREFIX)gcc
+RV_SIZE     = $(RISCV_PREFIX)size
+RV_CFLAGS   = -march=rv32i -mabi=ilp32 -mstrict-align -mno-relax -mcmodel=medany \
+              -O2 -g -Wall -Wextra -ffreestanding -fno-pic -fno-stack-protector \
+              -fno-asynchronous-unwind-tables -fno-unwind-tables -ffunction-sections -fdata-sections \
+              -I$(RT_DIR)
+CPROG_SRC   = $(PROG_DIR)/$(PROG).c
+CPROG_BASE  = $(if $(TEXT_BASE),$(TEXT_BASE),$(PRG_BASE))
+
+cprog:
+	@if [ ! -f $(CPROG_SRC) ]; then \
+		echo "[MAKE ERROR] $(CPROG_SRC) not found! (programs live in $(PROG_DIR)/)"; \
+		exit 1; \
+	fi
+	@mkdir -p $(RT_OBJ_DIR) $(TMP_DIR) $(PROG_OUT)
+	@echo "[MAKE] Compiling the runtime and $(CPROG_SRC)..."
+	$(RV_CC) $(RV_CFLAGS) -c $(RT_DIR)/crt0.S -o $(RT_OBJ_DIR)/crt0.o
+	$(RV_CC) $(RV_CFLAGS) -c $(RT_DIR)/uart.S -o $(RT_OBJ_DIR)/uart.o
+	$(RV_CC) $(RV_CFLAGS) -fno-tree-loop-distribute-patterns -c $(RT_DIR)/libc_min.c -o $(RT_OBJ_DIR)/libc_min.o
+	$(RV_CC) $(RV_CFLAGS) -c $(CPROG_SRC) -o $(TMP_DIR)/$(PROG).o
+	@echo "[MAKE] Linking at $(CPROG_BASE)..."
+	$(RV_CC) $(RV_CFLAGS) -nostdlib -nostartfiles -T $(RT_DIR)/link.ld \
+		-Wl,--gc-sections -Wl,--no-warn-rwx-segments \
+		-Wl,--defsym=PRG_BASE=$(CPROG_BASE) -Wl,--defsym=PRG_TOP=$(PRG_TOP) \
+		-Wl,-Map=$(PROG_OUT)/$(PROG).map \
+		$(RT_OBJ_DIR)/crt0.o $(TMP_DIR)/$(PROG).o $(RT_OBJ_DIR)/uart.o $(RT_OBJ_DIR)/libc_min.o -lgcc \
+		-o $(TMP_DIR)/$(PROG).elf
+	$(RV_SIZE) $(TMP_DIR)/$(PROG).elf
+	$(OBJCOPY) -O binary $(TMP_DIR)/$(PROG).elf $(PROG_OUT)/$(PROG).bin
+	$(OBJDUMP) -d -S $(TMP_DIR)/$(PROG).elf > $(PROG_OUT)/$(PROG).lst
+	@size=$$(wc -c < $(PROG_OUT)/$(PROG).bin); \
+	if [ $$(( size % 4 )) -ne 0 ]; then \
+		echo "[MAKE ERROR] image is $$size bytes, not a multiple of 4 (the BIOS would answer ec 06)"; \
+		exit 1; \
+	fi; \
+	if [ $$size -gt $(PRG_MAX_BYTES) ]; then \
+		echo "[MAKE ERROR] image is $$size bytes, the limit is $(PRG_MAX_BYTES)!"; \
+		exit 1; \
+	fi; \
+	echo "[MAKE] image: $$size bytes (limit $(PRG_MAX_BYTES))"
+	@od -An -v -tx4 -w4 $(PROG_OUT)/$(PROG).bin | tr -d ' ' > $(PROG_OUT)/$(PROG).hex
+	@echo "[MAKE] Done: $(PROG_OUT)/$(PROG).hex  (listing: $(PROG_OUT)/$(PROG).lst, map: $(PROG_OUT)/$(PROG).map)"
+	@echo "[MAKE] Load it from the CLI with:  load $(PROG_OUT)/$(PROG).hex"
+
+# host-side test of the runtime (z_gets/z_puts framing and error codes, libc_min.c, the C demo's logic)
+HOST_CC ?= gcc
+runtime-selftest:
+	@mkdir -p $(TMP_DIR)
+	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -Dmemcpy=zmemcpy -Dmemset=zmemset -Dmemmove=zmemmove -Dmemcmp=zmemcmp -Dstrlen=zstrlen \
+		-c $(RT_DIR)/libc_min.c -o $(TMP_DIR)/libc_min_host.o
+	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -I$(RT_DIR) -I$(PROG_DIR) -o $(TMP_DIR)/test_zenith$(EXE_EXT) \
+		$(RT_DIR)/test_zenith.c $(TMP_DIR)/libc_min_host.o
+	$(TMP_DIR)/test_zenith$(EXE_EXT)
 
 # ==================================================================================================
 # Core-only Verilator simulation (the program is the ROM image, no BIOS, no UART bridge)
@@ -212,20 +280,45 @@ bios-build:
 # Networked simulation (BIOS + CLI over TCP)
 #   A second Verilator build, separate from the core-only testbench: own output dir, own executable.
 #   On Windows the bridge needs Winsock (-lws2_32). Runs inside build/ like the core-only sim.
+#
+#   Speed matters here: a UART byte is 10400 simulated cycles, so a 3 KB program load is ~30M cycles each way.
+#   Knobs (a change rebuilds from scratch automatically):
+#     BRIDGE_OPT=-O3        C++ optimisation of the model. Verilator applies its own OPT_FAST (default -Os, i.e. size)
+#                           AFTER -CFLAGS, so it has to be set on the make that compiles the model, which is why
+#                           the build is done in two steps (verilate, then make) and not with --build.
+#     BRIDGE_PUBLIC=all     expose every signal (--public-flat-rw), always works
+#     BRIDGE_PUBLIC=min     expose only the few signals sim_bridge.cpp reads (src/rtl_sim/bridge.vlt): faster
+#     BRIDGE_TRACE=1        compile waveform support in (+TRACE writes build/waveform_bridge.vcd), slower
+#   The sim prints its speed on exit: "[BRIDGE] ... cycles in ... s (x MHz)".
 # ==================================================================================================
 BRIDGE_EXE      = $(BRIDGE_OBJ_DIR)/zenith_bridge$(EXE_EXT)
 BRIDGE_SRCS     = $(SIM_DIR)/sim_bridge.cpp
 BRIDGE_HDRS     = $(SIM_DIR)/uart_bridge.hpp
+BRIDGE_VLT      = $(SIM_DIR)/bridge.vlt
 
-bridge-compile: $(VERILOG_SRCS) $(BRIDGE_SRCS) $(BRIDGE_HDRS)
-	@echo "[MAKE] Compiling the networked simulation..."
+BRIDGE_OPT     ?= -O3
+BRIDGE_PUBLIC  ?= min
+BRIDGE_TRACE   ?= 0
+BRIDGE_VFLAGS   = $(if $(filter min,$(BRIDGE_PUBLIC)),,--public-flat-rw) $(if $(filter 1,$(BRIDGE_TRACE)),--trace,)
+BRIDGE_VSRCS    = $(if $(filter min,$(BRIDGE_PUBLIC)),$(BRIDGE_VLT),) $(VERILOG_SRCS)
+BRIDGE_CDEFS    = $(if $(filter 1,$(BRIDGE_TRACE)),-DBRIDGE_TRACE,)
+BRIDGE_STAMP    = opt=$(BRIDGE_OPT) public=$(BRIDGE_PUBLIC) trace=$(BRIDGE_TRACE)
+
+bridge-compile: $(VERILOG_SRCS) $(BRIDGE_SRCS) $(BRIDGE_HDRS) $(BRIDGE_VLT)
+	@echo "[MAKE] Compiling the networked simulation ($(BRIDGE_STAMP))..."
+	@if [ "$$(cat $(BRIDGE_OBJ_DIR)/.flags 2>/dev/null)" != "$(BRIDGE_STAMP)" ]; then \
+		echo "[MAKE] build flags changed, rebuilding from scratch"; \
+		rm -rf $(BRIDGE_OBJ_DIR); \
+	fi
 	@mkdir -p $(BRIDGE_OBJ_DIR)
-	$(VERILATOR) --cc --exe --build -j -Wall -Wno-fatal --trace --public-flat-rw \
+	$(VERILATOR) --cc --exe -Wall -Wno-fatal $(BRIDGE_VFLAGS) \
 		-I$(DESIGN_DIR) \
 		--Mdir $(BRIDGE_OBJ_DIR) -o zenith_bridge$(EXE_EXT) \
-		-CFLAGS "-O2" \
+		-CFLAGS "-O2 $(BRIDGE_CDEFS)" \
 		-LDFLAGS "-O2 $(WINSOCK_LIBS)" \
-		$(VERILOG_SRCS) $(BRIDGE_SRCS) --top-module top
+		$(BRIDGE_VSRCS) $(BRIDGE_SRCS) --top-module top
+	$(MAKE) -C $(BRIDGE_OBJ_DIR) -f Vtop.mk -j OPT_FAST="$(BRIDGE_OPT)"
+	@echo "$(BRIDGE_STAMP)" > $(BRIDGE_OBJ_DIR)/.flags
 
 bridge-run: bios-sim bridge-compile bridge-sim
 
