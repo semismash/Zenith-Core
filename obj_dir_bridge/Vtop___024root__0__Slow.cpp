@@ -734,6 +734,7 @@ VL_ATTR_COLD void Vtop___024root___ctor_var_reset(Vtop___024root* vlSelf) {
     vlSelf->top__DOT__u_cpu__DOT__uart_rx_ack = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 183998068053005876ull);
     vlSelf->top__DOT__u_cpu__DOT__meta_clear = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 8372965580738632536ull);
     vlSelf->top__DOT__u_cpu__DOT__meta_enable = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 6067929932348624926ull);
+    vlSelf->top__DOT__u_cpu__DOT__meta_cycle_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 18255108154990710380ull);
     vlSelf->top__DOT__u_cpu__DOT__meta_instr_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 4717391587955926335ull);
     vlSelf->top__DOT__u_cpu__DOT__meta_stall_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 1130141206269518050ull);
     vlSelf->top__DOT__u_cpu__DOT__meta_l_use_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 11974591466552408835ull);
@@ -1107,6 +1108,7 @@ VL_ATTR_COLD void Vtop___024root___ctor_var_reset(Vtop___024root* vlSelf) {
     vlSelf->top__DOT__u_cpu__DOT__u_mmio_interface__DOT__uart_rx_ack = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 3851714163575522579ull);
     vlSelf->top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_enable = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 12488748786413831571ull);
     vlSelf->top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_clear = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 1144347962504303804ull);
+    vlSelf->top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_cycle_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 12039591552229480754ull);
     vlSelf->top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_instr_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 11475705187978647459ull);
     vlSelf->top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_stall_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 3084433088616267828ull);
     vlSelf->top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_l_use_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 17462417015042043346ull);
@@ -1263,10 +1265,12 @@ VL_ATTR_COLD void Vtop___024root___ctor_var_reset(Vtop___024root* vlSelf) {
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__is_stall = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 4857920598539359320ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__is_l_use = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 5215389153777482933ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__is_br_flush = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 820656720393044536ull);
+    vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__meta_cycle_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 17545958703035371435ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__meta_instr_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 9084906644972353960ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__meta_stall_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 12307462395252423692ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__meta_l_use_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 2468398084888740226ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__meta_br_flush_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 12546549840680518013ull);
+    vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__cycle_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 16124580649554816373ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__instr_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 15613914127732262431ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__stall_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 11702730034716601678ull);
     vlSelf->top__DOT__u_cpu__DOT__u_meta__DOT__l_use_count = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 385372348010913071ull);

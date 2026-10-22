@@ -17,7 +17,7 @@ namespace client_mod {
         inline constexpr uint32_t PROGRESS_STEP = 1024;
         inline constexpr size_t POST_PAIR_BYTES = 12;
         inline constexpr size_t TELE_QUERY_BYTES = 6;
-        inline constexpr size_t TELE_STATUS_BYTES = 20;
+        inline constexpr size_t TELE_STATUS_BYTES = 25;    // 5 params (cycles, instr, stall, load-use, branch flush), 5 bytes each
         inline constexpr size_t REG_FRAME_BYTES = 31 * 5 + 1;   // after the opening 0x75, includes the closing 0x75
         inline constexpr auto MAX_READ_WAIT = std::chrono::milliseconds{50};
 
@@ -83,6 +83,7 @@ namespace client_mod {
         after_own = Stage::None;
         pending_f0 = false;
         pending_err.reset();
+        auto_net_ack = false;
         data_buf.clear();
         str = StrFrame{};
         mem_expected = 0;
@@ -154,6 +155,8 @@ namespace client_mod {
         if (active) {
             apply_completion(*active, ev);
             finish(TxOutcome::Ok);
+        } else if (auto_net_ack) {
+            linked = true;     // the ACK's POST frame was auto-detected (raw 0xAC), same effect as a normal `connect`
         }
         reset_parser();
         response_deadline.reset();
@@ -389,6 +392,31 @@ namespace client_mod {
                 if (byte != FB_DD_DISP) return false;
                 enter(Stage::DdBody, ev, now);
                 return true;
+            // the state byte alone didn't say which reply this is, this first content byte does
+            case Stage::AutoMeta:
+                if (byte == FB_META_DISP) {                       // status: 7D ... 7D
+                    counters = rsp::TelemetryCounters{};
+                    enter(Stage::TeleStatusBody, ev, now);
+                    return true;
+                }
+                if (byte == TB_META_BIOSTR || byte == TB_META_PRGTR || byte == TB_META_PRGRST) {   // query: 70/71/72 v ...
+                    enter(Stage::TeleQuery, ev, now);              // clears data_buf, then seed it with this byte
+                    data_buf.push_back(byte);
+                    return true;
+                }
+                return false;    // an empty-body (set) reply is caught earlier, in state_byte's AutoMeta case
+            case Stage::AutoNet:
+                if (byte == FB_NET_SYNACK) {                       // the SYN's reply: just AB, done
+                    finish_ok(ev);
+                    return true;
+                }
+                if (byte == FB_MSG_STR) {                           // the ACK's reply: its POST frame always opens with the message
+                    auto_net_ack = true;
+                    enter(Stage::PostBody, ev, now);
+                    start_str();
+                    return true;
+                }
+                return false;
             default:
                 return false;
         }
@@ -432,10 +460,11 @@ namespace client_mod {
             case Stage::TeleStatusBody:
                 data_buf.push_back(byte);
                 if (data_buf.size() == TELE_STATUS_BYTES) {
-                    for (size_t i{0}; i < 4; ++i) {
+                    for (size_t i{0}; i < 5; ++i) {
                         const auto param = data_buf[i * 5];
                         const auto value = le32(&data_buf[i * 5 + 1]);
                         switch (param) {
+                            case META_PARAM_CLKCYC: counters.cycles = value; break;
                             case META_PARAM_INSCNT: counters.instr = value; break;
                             case META_PARAM_STLCNT: counters.stall = value; break;
                             case META_PARAM_LSECNT: counters.load_use = value; break;
@@ -563,12 +592,54 @@ namespace client_mod {
                 }
                 break;
             case Stage::None:
-                if (st == BIOSST_PGEX) enter(Stage::Program, ev, now);    // started by raw bytes (sendbyte 0xCC)
+                begin_auto(st, ev, now);    // raw bytes (sendbyte/sendbytes) with no active transaction
                 return;
+            case Stage::AutoMeta:
+                // the state byte arrived straight back, with nothing in between: the raw bytes triggered
+                // a telemetry-set (empty reply body). We don't know what was set, so the cached settings
+                // become unknown rather than risk printing stale values (matches the ERR_TELEMETRY rule)
+                if (ready) {
+                    cache.telemetry = rsp::TelemetrySettings{};
+                    finish_ok(ev);
+                    return;
+                }
+                break;
             default:
                 break;
         }
         protocol_mismatch(st, ev, now);
+    }
+
+    // entered from Stage::None (no active transaction) when a BIOS state update arrives. Each case here
+    // mirrors what begin_parse() does for the matching command, minus anything that needed the original
+    // request to know (a dump's size, an echo's content). BIOSST_MEM and BIOSST_PGLD are left alone: the
+    // reply is unbounded without knowing the size that was sent, so framing it would risk misreading a
+    // coincidental 0xF0 inside raw data as a state marker. Their bytes still come through as before
+    // (logged to [FROM BIOS] under `monitor`, otherwise unparsed).
+    void SessionCore::begin_auto(uint8_t st, rsp::Events& ev, TimePoint now) {
+        switch (st) {
+            case BIOSST_PGEX:
+                enter(Stage::Program, ev, now);           // run, started by raw bytes (e.g. sendbyte 0xCC)
+                break;
+            case BIOSST_MSG:
+                enter(Stage::EchoHeader, ev, now);         // echo: self-describing (the string carries its own length)
+                break;
+            case BIOSST_ST:
+                cache.program_valid = false;               // self test overwrites program space, same as the normal path
+                enter(Stage::SelfTestByte, ev, now);
+                break;
+            case BIOSST_DD:
+                enter(Stage::DdHeader, ev, now);            // device data: fixed, self-describing set of fields
+                break;
+            case BIOSST_META:
+                enter(Stage::AutoMeta, ev, now);            // ambiguous: query / status / set all share this state byte
+                break;
+            case BIOSST_NET:
+                enter(Stage::AutoNet, ev, now);             // ambiguous: the SYN's AB vs the ACK's POST frame
+                break;
+            default:
+                break;
+        }
     }
 
     // only the ready signal matters, everything else is discarded

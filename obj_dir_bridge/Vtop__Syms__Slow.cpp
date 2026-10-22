@@ -11,7 +11,7 @@ Vtop__Syms::Vtop__Syms(VerilatedContext* contextp, const char* namep, Vtop* mode
     , TOP{this, namep}
 {
     // Check resources
-    Verilated::stackCheck(454);
+    Verilated::stackCheck(462);
     // Setup sub module instances
     TOP__rv32i.ctor(this, "rv32i");
     TOP__uart.ctor(this, "uart");
@@ -274,6 +274,7 @@ Vtop__Syms::Vtop__Syms(VerilatedContext* contextp, const char* namep, Vtop* mode
     __Vscopep_top__u_cpu->varInsert("mem_write", &(TOP.top__DOT__u_cpu__DOT__mem_write), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
     __Vscopep_top__u_cpu->varInsert("meta_br_flush_count", &(TOP.top__DOT__u_cpu__DOT__meta_br_flush_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu->varInsert("meta_clear", &(TOP.top__DOT__u_cpu__DOT__meta_clear), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
+    __Vscopep_top__u_cpu->varInsert("meta_cycle_count", &(TOP.top__DOT__u_cpu__DOT__meta_cycle_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu->varInsert("meta_enable", &(TOP.top__DOT__u_cpu__DOT__meta_enable), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
     __Vscopep_top__u_cpu->varInsert("meta_instr_count", &(TOP.top__DOT__u_cpu__DOT__meta_instr_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu->varInsert("meta_l_use_count", &(TOP.top__DOT__u_cpu__DOT__meta_l_use_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
@@ -755,6 +756,7 @@ Vtop__Syms::Vtop__Syms(VerilatedContext* contextp, const char* namep, Vtop* mode
     __Vscopep_top__u_cpu__u_meta->varInsert("br_flush_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__br_flush_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_meta->varInsert("clear", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__clear), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
     __Vscopep_top__u_cpu__u_meta->varInsert("clk", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__clk), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
+    __Vscopep_top__u_cpu__u_meta->varInsert("cycle_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__cycle_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_meta->varInsert("enable", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__enable), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
     __Vscopep_top__u_cpu__u_meta->varInsert("instr_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__instr_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_meta->varInsert("is_br_flush", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__is_br_flush), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
@@ -763,6 +765,7 @@ Vtop__Syms::Vtop__Syms(VerilatedContext* contextp, const char* namep, Vtop* mode
     __Vscopep_top__u_cpu__u_meta->varInsert("is_stall", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__is_stall), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
     __Vscopep_top__u_cpu__u_meta->varInsert("l_use_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__l_use_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_meta->varInsert("meta_br_flush_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__meta_br_flush_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW|VLVF_CONTINUOUSLY, 0, 1 ,31,0);
+    __Vscopep_top__u_cpu__u_meta->varInsert("meta_cycle_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__meta_cycle_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW|VLVF_CONTINUOUSLY, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_meta->varInsert("meta_instr_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__meta_instr_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW|VLVF_CONTINUOUSLY, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_meta->varInsert("meta_l_use_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__meta_l_use_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW|VLVF_CONTINUOUSLY, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_meta->varInsert("meta_stall_count", &(TOP.top__DOT__u_cpu__DOT__u_meta__DOT__meta_stall_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW|VLVF_CONTINUOUSLY, 0, 1 ,31,0);
@@ -789,6 +792,7 @@ Vtop__Syms::Vtop__Syms(VerilatedContext* contextp, const char* namep, Vtop* mode
     __Vscopep_top__u_cpu__u_mmio_interface->varInsert("data_wvalid", &(TOP.top__DOT__u_cpu__DOT__u_mmio_interface__DOT__data_wvalid), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW, 0, 0);
     __Vscopep_top__u_cpu__u_mmio_interface->varInsert("meta_br_flush_count", &(TOP.top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_br_flush_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_mmio_interface->varInsert("meta_clear", &(TOP.top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_clear), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW|VLVF_CONTINUOUSLY, 0, 0);
+    __Vscopep_top__u_cpu__u_mmio_interface->varInsert("meta_cycle_count", &(TOP.top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_cycle_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_mmio_interface->varInsert("meta_enable", &(TOP.top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_enable), false, VLVT_UINT8, VLVD_NODIR|VLVF_PUB_RW|VLVF_CONTINUOUSLY, 0, 0);
     __Vscopep_top__u_cpu__u_mmio_interface->varInsert("meta_instr_count", &(TOP.top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_instr_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);
     __Vscopep_top__u_cpu__u_mmio_interface->varInsert("meta_l_use_count", &(TOP.top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_l_use_count), false, VLVT_UINT32, VLVD_NODIR|VLVF_PUB_RW, 0, 1 ,31,0);

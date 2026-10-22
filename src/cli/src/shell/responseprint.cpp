@@ -265,11 +265,16 @@ namespace print_mod {
         const auto* selected = std::get_if<std::set<TelemetryParam>>(&status.filter);
         const auto want = [selected](TelemetryParam p) { return selected == nullptr || selected->contains(p); };
 
+        if (want(TelemetryParam::Cycles)) emit_line(msgs.fmt("status.cycles", c.cycles));
         if (want(TelemetryParam::Instr)) emit_line(msgs.fmt("status.instr", c.instr));
         if (want(TelemetryParam::Stall)) emit_line(msgs.fmt("status.stall", c.stall));
         if (want(TelemetryParam::StallPcnt)) {     // derived client side: stalls per 100 instructions
             if (c.instr == 0) emit_line(msgs.get("status.stallpcnt_na"));
             else emit_line(msgs.fmt("status.stallpcnt", static_cast<double>(c.stall) * 100.0 / static_cast<double>(c.instr)));
+        }
+        if (want(TelemetryParam::Cpi)) {     // derived client side: clock cycles per instruction
+            if (c.instr == 0) emit_line(msgs.get("status.cpi_na"));
+            else emit_line(msgs.fmt("status.cpi", static_cast<double>(c.cycles) / static_cast<double>(c.instr)));
         }
         if (want(TelemetryParam::LoadUseStall)) emit_line(msgs.fmt("status.loaduse", c.load_use));
         if (want(TelemetryParam::BranchFlush)) emit_line(msgs.fmt("status.brflush", c.branch_flush));

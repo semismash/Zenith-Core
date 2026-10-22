@@ -61,9 +61,11 @@ namespace cmdparse_mod {
             std::set<TelemetryParam> out{};
             for (const auto& item : parse_list(text)) {
                 const auto name = to_lower(item);
-                if (name == "instr") out.insert(TelemetryParam::Instr);
+                if (name == "cycles") out.insert(TelemetryParam::Cycles);
+                else if (name == "instr") out.insert(TelemetryParam::Instr);
                 else if (name == "stall") out.insert(TelemetryParam::Stall);
                 else if (name == "stallpcnt") out.insert(TelemetryParam::StallPcnt);
+                else if (name == "cpi") out.insert(TelemetryParam::Cpi);
                 else if (name == "loaduse") out.insert(TelemetryParam::LoadUseStall);
                 else if (name == "brflush") out.insert(TelemetryParam::BranchFlush);
                 else return std::unexpected(Error(ParseErr::InvalidTelemetryParam, item));

@@ -37,6 +37,7 @@ namespace responses {
     };
 
     struct TelemetryCounters {
+        uint32_t cycles{0};
         uint32_t instr{0};
         uint32_t stall{0};
         uint32_t load_use{0};

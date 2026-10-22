@@ -247,6 +247,7 @@ module rv32i_core (
     // meta unit
     logic meta_clear;
     logic meta_enable;
+    MetaCount meta_cycle_count;
     MetaCount meta_instr_count;
     MetaCount meta_stall_count;
     MetaCount meta_l_use_count;
@@ -647,6 +648,7 @@ module rv32i_core (
         // TELEMETRY UNIT
         .meta_enable        (meta_enable),
         .meta_clear         (meta_clear),
+        .meta_cycle_count   (meta_cycle_count),
         .meta_instr_count   (meta_instr_count),
         .meta_stall_count   (meta_stall_count),
         .meta_l_use_count   (meta_l_use_count),
@@ -743,6 +745,7 @@ module rv32i_core (
         .is_stall               (hz_meta_is_stall),
         .is_l_use               (hz_meta_is_l_use),
         .is_br_flush            (hz_meta_branch_flush),
+        .meta_cycle_count       (meta_cycle_count),
         .meta_instr_count       (meta_instr_count),
         .meta_stall_count       (meta_stall_count),
         .meta_l_use_count       (meta_l_use_count),

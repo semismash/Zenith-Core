@@ -27,7 +27,11 @@ typedef enum Word {
     META_FLUSH_C_0  = 32'h00001010,     // I
     META_FLUSH_C_1  = 32'h00001011,     // I
     META_FLUSH_C_2  = 32'h00001012,     // I
-    META_FLUSH_C_3  = 32'h00001013      // I
+    META_FLUSH_C_3  = 32'h00001013,     // I
+    META_CYCLE_C_0  = 32'h00001014,     // I
+    META_CYCLE_C_1  = 32'h00001015,     // I
+    META_CYCLE_C_2  = 32'h00001016,     // I
+    META_CYCLE_C_3  = 32'h00001017      // I
 
 } MMIOAddress;
 
@@ -69,6 +73,7 @@ module mmio_interface (
     // TELEMTRY UNIT
     output logic meta_enable,
     output logic meta_clear,
+    input MetaCount meta_cycle_count,
     input MetaCount meta_instr_count,
     input MetaCount meta_stall_count,
     input MetaCount meta_l_use_count,
@@ -113,6 +118,7 @@ module mmio_interface (
             META_STALL_C_0: rd_val = meta_stall_count;                              
             META_L_USE_C_0: rd_val = meta_l_use_count;                              
             META_FLUSH_C_0: rd_val = meta_br_flush_count;                           
+            META_CYCLE_C_0: rd_val = meta_cycle_count;
             default:        rd_resp = RESP_SLVERR;                                  // unmapped MMIO word
         endcase                                                                     
     end                                                                             

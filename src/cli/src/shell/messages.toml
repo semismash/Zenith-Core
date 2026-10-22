@@ -104,10 +104,13 @@ clk = "clock:          {:g} MHz"
 baud = "baud:           {}"
 
 [status]
+cycles = "clock cycles:        {}"
 instr = "instructions:        {}"
 stall = "stalls:              {}"
 stallpcnt = "stall percent:       {:.2f} %"
 stallpcnt_na = "stall percent:       n/a (no instructions counted)"
+cpi = "CPI:                 {:.3f}"
+cpi_na = "CPI:                 n/a (no instructions counted)"
 loaduse = "load-use stalls:     {}"
 brflush = "branch flushes:      {}"
 
@@ -170,7 +173,7 @@ Zenith Core BIOS CLI commands (`help <command>` for details)
  program      load <file.bin|file.hex> -r -v --offset= --telemode= --telereset= --register=
               run, verify
  memory       hexdump --offset=ADDR --size=COUNT
- telemetry    telemetry --mode= --reset= -r, status [-t | --telemetry=[instr, stall, stallpcnt, loaduse, brflush]]
+ telemetry    telemetry --mode= --reset= -r, status [-t | --telemetry=[cycles, instr, stall, stallpcnt, cpi, loaduse, brflush]]
  device       deviceinfo [--info=[arch, reg, rom, ram, mem, clk, baud]], sync, selftest
  raw bytes    sendbyte <byte>, sendbytes --bytes=[b0, b1, ...] --interval=N
  display      monitor [on|off], log [on|off], echo "message" [-t], clear
@@ -225,8 +228,8 @@ no arguments: show the current settings
 -r       reset the counters now (0x73)
 Program telemetry tracking (0x71) is set by `load --telemode`, every load overwrites 0x71 and 0x72.'''
 status = '''
-status [-t | --telemetry=[instr, stall, stallpcnt, loaduse, brflush]]
-Telemetry counters (all of them by default). stallpcnt = stalls per 100 instructions (client side).'''
+status [-t | --telemetry=[cycles, instr, stall, stallpcnt, cpi, loaduse, brflush]]
+Telemetry counters (all of them by default). stallpcnt = stalls per 100 instructions, cpi = cycles per instruction (both client side).'''
 monitor = '''
 monitor [on | off]
 Prints every byte coming from the BIOS as [FROM BIOS] 0xNN. No argument shows the current status.'''
@@ -271,7 +274,7 @@ invalid_bool = "error: expected true/false/on/off/1/0, got: {}"
 invalid_toggle = "error: expected on/off/true/false, got: {}"
 invalid_profile = "error: unknown profile '{}' (sim or fpga)"
 invalid_info = "error: unknown --info item '{}' (arch, reg, rom, ram, mem, clk, baud)"
-invalid_telemetry = "error: unknown --telemetry item '{}' (instr, stall, stallpcnt, loaduse, brflush)"
+invalid_telemetry = "error: unknown --telemetry item '{}' (cycles, instr, stall, stallpcnt, cpi, loaduse, brflush)"
 invalid_bytes = "error: not a byte (0 to 255): {}"
 invalid_hostport = "error: expected host, host:port or :port, got: {}"
 invalid_seconds = "error: expected a positive number of seconds, got: {}"

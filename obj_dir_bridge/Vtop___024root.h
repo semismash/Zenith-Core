@@ -921,6 +921,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final {
         IData/*31:0*/ top__DOT__u_cpu__DOT__ex_mem_rs2_val;
         IData/*31:0*/ top__DOT__u_cpu__DOT__ex_mem_result;
         IData/*31:0*/ top__DOT__u_cpu__DOT__mem_wb_result;
+        IData/*31:0*/ top__DOT__u_cpu__DOT__meta_cycle_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__meta_instr_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__meta_stall_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__meta_l_use_count;
@@ -942,9 +943,9 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final {
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__if_rdata;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__pc_out;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__instr_out;
-        IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__req_pc;
     };
     struct {
+        IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__req_pc;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__pend_pc;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__hold_addr;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_fetch__DOT__unnamedblk2__DOT__i;
@@ -999,6 +1000,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final {
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__data_rdata;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__data_awaddr;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__data_wdata;
+        IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_cycle_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_instr_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_stall_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__meta_l_use_count;
@@ -1007,18 +1009,20 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final {
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__wr_word;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mmio_interface__DOT__rd_val;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_mem_wb__DOT__i_result;
-        IData/*31:0*/ top__DOT__u_cpu__DOT__u_mem_wb__DOT__o_result;
-        IData/*31:0*/ top__DOT__u_cpu__DOT__u_write_back__DOT__result;
     };
     struct {
+        IData/*31:0*/ top__DOT__u_cpu__DOT__u_mem_wb__DOT__o_result;
+        IData/*31:0*/ top__DOT__u_cpu__DOT__u_write_back__DOT__result;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_write_back__DOT__data_rdata;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_write_back__DOT__rd_data;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_write_back__DOT__shifted;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_write_back__DOT__load_val;
+        IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__meta_cycle_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__meta_instr_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__meta_stall_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__meta_l_use_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__meta_br_flush_count;
+        IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__cycle_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__instr_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__stall_count;
         IData/*31:0*/ top__DOT__u_cpu__DOT__u_meta__DOT__l_use_count;

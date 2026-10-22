@@ -21,6 +21,7 @@
 # Telemetry
 .equ ADDR_META_CONTROL,     0x80001000
 .equ ADDR_META_CONTROL_RD,  0x80001001              # read only mirror of above quantity
+.equ ADDR_META_CYCLES,      0x80001014
 .equ ADDR_META_INSTR,       0x80001004
 .equ ADDR_META_STALL,       0x80001008
 .equ ADDR_META_L_USE,       0x8000100C
@@ -761,10 +762,16 @@ telemetry_status:    # implements the `status --telemetry` display; replies with
     li      a6, BIOSST_META         # reuse the telemetry display state code
     call    update_state            # update state
     li      t0, ADDR_META_CONTROL   # freeze the counters (w/ enable=0) so all four values below come from the same instant
-    sb      zero, 0(t0)
+    sb      x0, 0(t0)
 
     li      a0, FB_META_DISP        # opening guard byte
     tx
+
+    li      a0, META_PARAM_CLKCYC   # cycle count
+    tx
+    li      t0, ADDR_META_CYCLES
+    lw      a0, 0(t0)
+    call    send_word
 
     li      a0, META_PARAM_INSCNT   # instruction count
     tx
@@ -1120,6 +1127,9 @@ program_run:
     sw      s10, 8(t2)               # overwrite them, not load (which was clobbering s11 right before the `jr s11`
     sw      s11, 12(t2)              # below, i.e. program_run could never actually have jumped anywhere valid)
 
+    li      a6, BIOSST_PGEX             # CRUCIAL
+    call    update_state                # update state
+
     srli    t0, s10, 11     # program telemetry enable
     andi    t0, t0, 0x01    # mask out other bits
     srli    t1, s10, 12     # program telemetry reset
@@ -1141,10 +1151,7 @@ program_run:
     sb      t3, 0(t2)       # assert reset bit to hardware as pulse
     andi    t3, t3, 0xFE    # reset the reset bit (basically, set reset bit to zero again)
     sb      t3, 0(t2)       # deassert reset bit
-
 3:
-    li      a6, BIOSST_PGEX             # CRUCIAL
-    call    update_state                # update state
     li      sp, PROGRAM_TOP             # now 0x21000 # set up stack pointer at top of the program space (0x20000)
     add     ra, s11, s9                 # ra = the tail's lui, so a program ending in `ret` also returns to the BIOS
     jr      s11                         # jump to program start offset
@@ -1155,6 +1162,8 @@ program_unverified:                     # shared by program_run and program_veri
 
 # <---------- NOTE: The below two functions were initially written with the help of AI, but were thoroughly reviewed a human. ---------->
 jump_back:    #  default post-execution return target (no register display); restores BIOS's own s9/s10/s11, reinitializes s1 and sp, then returns to idle
+    li      t0, ADDR_META_CONTROL
+    sb      x0, 0(t0)
     li      a6, BIOSST_PGDN          #  CRUCIAL: send BIOS PG_DN byte as a first transmission so CLI knows program execution is complete and can update its internal mode from program mode back the BIOS mode to start working again 
     call    update_state
 
@@ -1170,6 +1179,9 @@ jump_back:    #  default post-execution return target (no register display); res
     j       idle                     #  return to full idle (program execution is only ever reachable once a self test has passed, so plain idle is correct here)
 
 jump_back_reg_disp:    #  post-execution return target when register display was requested; dumps x1-x31 (the program's live values) over UART, then does the same teardown as jump_back
+    li      t6, ADDR_META_CONTROL    #  meta update correctly
+    sb      x0, 0(t6) 
+    
     li      t6, REG_DUMP_BUF         #  use x31 (t6) itself as the dump buffer base pointer, since it's the one register whose own live value can't be captured this way
     sw      ra,  0(t6)               #  x1
     sw      sp,  4(t6)               #  x2
@@ -1201,7 +1213,7 @@ jump_back_reg_disp:    #  post-execution return target when register display was
     sw      t3,  108(t6)             #  x28
     sw      t4,  112(t6)             #  x29
     sw      t5,  116(t6)             #  x30
-    sw      zero, 120(t6)            #  x31 (t6) was used as the dump base pointer above, so its original value is lost; reported as 0
+    sw      x0, 120(t6)              #  x31 (t6) was used as the dump base pointer above, so its original value is lost; reported as 0
 
     li      a6, BIOSST_PGDN          #  CRUCIAL: send BIOS PG_DN byte as a first transmission so CLI knows program execution is complete and can update its internal mode from program mode back the BIOS mode to start working again 
     call    update_state             
@@ -1214,7 +1226,7 @@ jump_back_reg_disp:    #  post-execution return target when register display was
     la      s1, UART_STATUS          #  reinitialize UART status pointer
     li      sp, RAM_TOP              #  load the value, not the address of the rodata word #  re-heal BIOS stack
     call    sync_bios_telemetry      #  push the restored telemetry enable setting out to hardware
-
+               
     li      t2, REG_DUMP_BUF         #  send pointer; t6 can't be reused here since the tx/rx macros clobber it as their own link register on every call
     li      a0, FB_REG_DISP          #  opening guard byte
     tx
@@ -1242,10 +1254,10 @@ jump_back_reg_disp:    #  post-execution return target when register display was
     .balign 4
 tail_run:
     lui     t6, %hi(jump_back)
-    jalr    zero, %lo(jump_back)(t6)
+    jalr    x0, %lo(jump_back)(t6)
 tail_regdisp:
     lui     t6, %hi(jump_back_reg_disp)
-    jalr    zero, %lo(jump_back_reg_disp)(t6)
+    jalr    x0, %lo(jump_back_reg_disp)(t6)
     .option pop
 
 # HELPERS

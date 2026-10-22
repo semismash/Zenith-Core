@@ -1,0 +1,1180 @@
+
+tmp/bios.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+       0:	00000c13          	li	s8,0
+
+00000004 <self_test>:
+       4:	04100093          	li	ra,65
+       8:	08200113          	li	sp,130
+       c:	0c300193          	li	gp,195
+      10:	10400213          	li	tp,260
+      14:	14500293          	li	t0,325
+      18:	18600313          	li	t1,390
+      1c:	1c700393          	li	t2,455
+      20:	20800413          	li	s0,520
+      24:	24900493          	li	s1,585
+      28:	28a00513          	li	a0,650
+      2c:	2cb00593          	li	a1,715
+      30:	30c00613          	li	a2,780
+      34:	34d00693          	li	a3,845
+      38:	38e00713          	li	a4,910
+      3c:	3cf00793          	li	a5,975
+      40:	04100f93          	li	t6,65
+      44:	15f09863          	bne	ra,t6,194 <selftest_alu>
+      48:	08200f93          	li	t6,130
+      4c:	15f11463          	bne	sp,t6,194 <selftest_alu>
+      50:	0c300f93          	li	t6,195
+      54:	15f19063          	bne	gp,t6,194 <selftest_alu>
+      58:	10400f93          	li	t6,260
+      5c:	13f21c63          	bne	tp,t6,194 <selftest_alu>
+      60:	14500f93          	li	t6,325
+      64:	13f29863          	bne	t0,t6,194 <selftest_alu>
+      68:	18600f93          	li	t6,390
+      6c:	13f31463          	bne	t1,t6,194 <selftest_alu>
+      70:	1c700f93          	li	t6,455
+      74:	13f39063          	bne	t2,t6,194 <selftest_alu>
+      78:	20800f93          	li	t6,520
+      7c:	11f41c63          	bne	s0,t6,194 <selftest_alu>
+      80:	24900f93          	li	t6,585
+      84:	11f49863          	bne	s1,t6,194 <selftest_alu>
+      88:	28a00f93          	li	t6,650
+      8c:	11f51463          	bne	a0,t6,194 <selftest_alu>
+      90:	2cb00f93          	li	t6,715
+      94:	11f59063          	bne	a1,t6,194 <selftest_alu>
+      98:	30c00f93          	li	t6,780
+      9c:	0ff61c63          	bne	a2,t6,194 <selftest_alu>
+      a0:	34d00f93          	li	t6,845
+      a4:	0ff69863          	bne	a3,t6,194 <selftest_alu>
+      a8:	38e00f93          	li	t6,910
+      ac:	0ff71463          	bne	a4,t6,194 <selftest_alu>
+      b0:	3cf00f93          	li	t6,975
+      b4:	0ff79063          	bne	a5,t6,194 <selftest_alu>
+      b8:	000c0093          	mv	ra,s8
+      bc:	41000813          	li	a6,1040
+      c0:	45100893          	li	a7,1105
+      c4:	49200913          	li	s2,1170
+      c8:	4d300993          	li	s3,1235
+      cc:	51400a13          	li	s4,1300
+      d0:	55500a93          	li	s5,1365
+      d4:	59600b13          	li	s6,1430
+      d8:	5d700b93          	li	s7,1495
+      dc:	61800c13          	li	s8,1560
+      e0:	65900c93          	li	s9,1625
+      e4:	69a00d13          	li	s10,1690
+      e8:	6db00d93          	li	s11,1755
+      ec:	71c00e13          	li	t3,1820
+      f0:	75d00e93          	li	t4,1885
+      f4:	79e00f13          	li	t5,1950
+      f8:	000c0313          	mv	t1,s8
+      fc:	00008c13          	mv	s8,ra
+     100:	41000f93          	li	t6,1040
+     104:	09f81863          	bne	a6,t6,194 <selftest_alu>
+     108:	45100f93          	li	t6,1105
+     10c:	09f89463          	bne	a7,t6,194 <selftest_alu>
+     110:	49200f93          	li	t6,1170
+     114:	09f91063          	bne	s2,t6,194 <selftest_alu>
+     118:	4d300f93          	li	t6,1235
+     11c:	07f99c63          	bne	s3,t6,194 <selftest_alu>
+     120:	51400f93          	li	t6,1300
+     124:	07fa1863          	bne	s4,t6,194 <selftest_alu>
+     128:	55500f93          	li	t6,1365
+     12c:	07fa9463          	bne	s5,t6,194 <selftest_alu>
+     130:	59600f93          	li	t6,1430
+     134:	07fb1063          	bne	s6,t6,194 <selftest_alu>
+     138:	5d700f93          	li	t6,1495
+     13c:	05fb9c63          	bne	s7,t6,194 <selftest_alu>
+     140:	61800f93          	li	t6,1560
+     144:	05f31863          	bne	t1,t6,194 <selftest_alu>
+     148:	65900f93          	li	t6,1625
+     14c:	05fc9463          	bne	s9,t6,194 <selftest_alu>
+     150:	69a00f93          	li	t6,1690
+     154:	05fd1063          	bne	s10,t6,194 <selftest_alu>
+     158:	6db00f93          	li	t6,1755
+     15c:	03fd9c63          	bne	s11,t6,194 <selftest_alu>
+     160:	71c00f93          	li	t6,1820
+     164:	03fe1863          	bne	t3,t6,194 <selftest_alu>
+     168:	75d00f93          	li	t6,1885
+     16c:	03fe9463          	bne	t4,t6,194 <selftest_alu>
+     170:	79e00f93          	li	t6,1950
+     174:	03ff1063          	bne	t5,t6,194 <selftest_alu>
+     178:	7df00f93          	li	t6,2015
+     17c:	7df00f13          	li	t5,2015
+     180:	01ef9a63          	bne	t6,t5,194 <selftest_alu>
+     184:	00000f33          	add	t5,zero,zero
+     188:	000f1663          	bnez	t5,194 <selftest_alu>
+     18c:	001c6c13          	ori	s8,s8,1
+     190:	100c0c13          	addi	s8,s8,256
+
+00000194 <selftest_alu>:
+     194:	00500293          	li	t0,5
+     198:	00300313          	li	t1,3
+     19c:	006283b3          	add	t2,t0,t1
+     1a0:	00800e13          	li	t3,8
+     1a4:	09c39c63          	bne	t2,t3,23c <selftest_alu_fail>
+     1a8:	800002b7          	lui	t0,0x80000
+     1ac:	fff28293          	addi	t0,t0,-1 # 7fffffff <CONNECTION_TIMEOUT_CYCLES+0x7f1b3333>
+     1b0:	00100313          	li	t1,1
+     1b4:	006283b3          	add	t2,t0,t1
+     1b8:	80000e37          	lui	t3,0x80000
+     1bc:	09c39063          	bne	t2,t3,23c <selftest_alu_fail>
+     1c0:	f0f0f2b7          	lui	t0,0xf0f0f
+     1c4:	0f028293          	addi	t0,t0,240 # f0f0f0f0 <ADDR_META_CYCLES+0x70f0e0dc>
+     1c8:	0f0f1337          	lui	t1,0xf0f1
+     1cc:	f0f30313          	addi	t1,t1,-241 # f0f0f0f <CONNECTION_TIMEOUT_CYCLES+0xe2a4243>
+     1d0:	0062f3b3          	and	t2,t0,t1
+     1d4:	06039463          	bnez	t2,23c <selftest_alu_fail>
+     1d8:	0062e3b3          	or	t2,t0,t1
+     1dc:	fff00e13          	li	t3,-1
+     1e0:	05c39e63          	bne	t2,t3,23c <selftest_alu_fail>
+     1e4:	0062c3b3          	xor	t2,t0,t1
+     1e8:	05c39a63          	bne	t2,t3,23c <selftest_alu_fail>
+     1ec:	800002b7          	lui	t0,0x80000
+     1f0:	00128293          	addi	t0,t0,1 # 80000001 <UART_STATUS+0x1>
+     1f4:	0042d393          	srli	t2,t0,0x4
+     1f8:	08000e37          	lui	t3,0x8000
+     1fc:	05c39063          	bne	t2,t3,23c <selftest_alu_fail>
+     200:	4042d393          	srai	t2,t0,0x4
+     204:	f8000e37          	lui	t3,0xf8000
+     208:	03c39a63          	bne	t2,t3,23c <selftest_alu_fail>
+     20c:	00429393          	slli	t2,t0,0x4
+     210:	01000e13          	li	t3,16
+     214:	03c39463          	bne	t2,t3,23c <selftest_alu_fail>
+     218:	fff00293          	li	t0,-1
+     21c:	00100313          	li	t1,1
+     220:	0062a3b3          	slt	t2,t0,t1
+     224:	00100e13          	li	t3,1
+     228:	01c39a63          	bne	t2,t3,23c <selftest_alu_fail>
+     22c:	0062b3b3          	sltu	t2,t0,t1
+     230:	00039663          	bnez	t2,23c <selftest_alu_fail>
+     234:	002c6c13          	ori	s8,s8,2
+     238:	100c0c13          	addi	s8,s8,256
+
+0000023c <selftest_alu_fail>:
+     23c:	00500293          	li	t0,5
+     240:	00500313          	li	t1,5
+     244:	00000e13          	li	t3,0
+     248:	00628463          	beq	t0,t1,250 <selftest_alu_fail+0x14>
+     24c:	0780006f          	j	2c4 <selftest_ctrl_fail>
+     250:	00100e13          	li	t3,1
+     254:	00100e93          	li	t4,1
+     258:	07de1663          	bne	t3,t4,2c4 <selftest_ctrl_fail>
+     25c:	00500293          	li	t0,5
+     260:	00600313          	li	t1,6
+     264:	00000e13          	li	t3,0
+     268:	04628e63          	beq	t0,t1,2c4 <selftest_ctrl_fail>
+     26c:	00100e13          	li	t3,1
+     270:	00100e93          	li	t4,1
+     274:	05de1863          	bne	t3,t4,2c4 <selftest_ctrl_fail>
+     278:	00300293          	li	t0,3
+     27c:	00700313          	li	t1,7
+     280:	0062c463          	blt	t0,t1,288 <selftest_alu_fail+0x4c>
+     284:	0400006f          	j	2c4 <selftest_ctrl_fail>
+     288:	00700293          	li	t0,7
+     28c:	00300313          	li	t1,3
+     290:	0262ca63          	blt	t0,t1,2c4 <selftest_ctrl_fail>
+     294:	0062d463          	bge	t0,t1,29c <selftest_alu_fail+0x60>
+     298:	02c0006f          	j	2c4 <selftest_ctrl_fail>
+     29c:	008000ef          	jal	2a4 <selftest_jal_target>
+     2a0:	0080006f          	j	2a8 <selftest_jal_check>
+
+000002a4 <selftest_jal_target>:
+     2a4:	00008067          	ret
+
+000002a8 <selftest_jal_check>:
+     2a8:	00000297          	auipc	t0,0x0
+     2ac:	01028293          	addi	t0,t0,16 # 2b8 <selftest_jalr_target>
+     2b0:	000280e7          	jalr	t0
+     2b4:	0080006f          	j	2bc <selftest_ctrl_pass>
+
+000002b8 <selftest_jalr_target>:
+     2b8:	00008067          	ret
+
+000002bc <selftest_ctrl_pass>:
+     2bc:	004c6c13          	ori	s8,s8,4
+     2c0:	100c0c13          	addi	s8,s8,256
+
+000002c4 <selftest_ctrl_fail>:
+     2c4:	000022b7          	lui	t0,0x2
+     2c8:	a1a1a337          	lui	t1,0xa1a1a
+     2cc:	1a130313          	addi	t1,t1,417 # a1a1a1a1 <ADDR_META_CYCLES+0x21a1918d>
+     2d0:	0062a023          	sw	t1,0(t0) # 2000 <PRG_VALID_BIT>
+     2d4:	0002a383          	lw	t2,0(t0)
+     2d8:	08731463          	bne	t1,t2,360 <selftest_mem_fail>
+     2dc:	000092b7          	lui	t0,0x9
+     2e0:	b2b2b337          	lui	t1,0xb2b2b
+     2e4:	2b230313          	addi	t1,t1,690 # b2b2b2b2 <ADDR_META_CYCLES+0x32b2a29e>
+     2e8:	0062a023          	sw	t1,0(t0) # 9000 <UART_BAUD_RATE+0x6a80>
+     2ec:	0002a383          	lw	t2,0(t0)
+     2f0:	06731863          	bne	t1,t2,360 <selftest_mem_fail>
+     2f4:	000112b7          	lui	t0,0x11
+     2f8:	c3c3c337          	lui	t1,0xc3c3c
+     2fc:	3c330313          	addi	t1,t1,963 # c3c3c3c3 <ADDR_META_CYCLES+0x43c3b3af>
+     300:	0062a023          	sw	t1,0(t0) # 11000 <UART_BAUD_RATE+0xea80>
+     304:	0002a383          	lw	t2,0(t0)
+     308:	04731c63          	bne	t1,t2,360 <selftest_mem_fail>
+     30c:	000212b7          	lui	t0,0x21
+     310:	ffc28293          	addi	t0,t0,-4 # 20ffc <RAM_SIZE+0xffc>
+     314:	d4d4d337          	lui	t1,0xd4d4d
+     318:	4d430313          	addi	t1,t1,1236 # d4d4d4d4 <ADDR_META_CYCLES+0x54d4c4c0>
+     31c:	0062a023          	sw	t1,0(t0)
+     320:	0002a383          	lw	t2,0(t0)
+     324:	02731e63          	bne	t1,t2,360 <selftest_mem_fail>
+     328:	000022b7          	lui	t0,0x2
+     32c:	05a00313          	li	t1,90
+     330:	00628023          	sb	t1,0(t0) # 2000 <PRG_VALID_BIT>
+     334:	00028383          	lb	t2,0(t0)
+     338:	02731463          	bne	t1,t2,360 <selftest_mem_fail>
+     33c:	000022b7          	lui	t0,0x2
+     340:	00428293          	addi	t0,t0,4 # 2004 <PRG_VALID_BIT+0x4>
+     344:	00001337          	lui	t1,0x1
+     348:	23430313          	addi	t1,t1,564 # 1234 <connection_timeout+0xd8>
+     34c:	00629023          	sh	t1,0(t0)
+     350:	00029383          	lh	t2,0(t0)
+     354:	00731663          	bne	t1,t2,360 <selftest_mem_fail>
+     358:	008c6c13          	ori	s8,s8,8
+     35c:	100c0c13          	addi	s8,s8,256
+
+00000360 <selftest_mem_fail>:
+     360:	00022137          	lui	sp,0x22
+     364:	111112b7          	lui	t0,0x11111
+     368:	11128293          	addi	t0,t0,273 # 11111111 <CONNECTION_TIMEOUT_CYCLES+0x102c4445>
+     36c:	22222337          	lui	t1,0x22222
+     370:	22230313          	addi	t1,t1,546 # 22222222 <CONNECTION_TIMEOUT_CYCLES+0x213d5556>
+     374:	333333b7          	lui	t2,0x33333
+     378:	33338393          	addi	t2,t2,819 # 33333333 <CONNECTION_TIMEOUT_CYCLES+0x324e6667>
+     37c:	ffc10113          	addi	sp,sp,-4 # 21ffc <REG_DUMP_BUF+0x6fc>
+     380:	00512023          	sw	t0,0(sp)
+     384:	ffc10113          	addi	sp,sp,-4
+     388:	00612023          	sw	t1,0(sp)
+     38c:	ffc10113          	addi	sp,sp,-4
+     390:	00712023          	sw	t2,0(sp)
+     394:	00012e03          	lw	t3,0(sp)
+     398:	027e1863          	bne	t3,t2,3c8 <selftest_sp_fail>
+     39c:	00410113          	addi	sp,sp,4
+     3a0:	00012e03          	lw	t3,0(sp)
+     3a4:	026e1263          	bne	t3,t1,3c8 <selftest_sp_fail>
+     3a8:	00410113          	addi	sp,sp,4
+     3ac:	00012e03          	lw	t3,0(sp)
+     3b0:	005e1c63          	bne	t3,t0,3c8 <selftest_sp_fail>
+     3b4:	00410113          	addi	sp,sp,4
+     3b8:	00022eb7          	lui	t4,0x22
+     3bc:	01d11663          	bne	sp,t4,3c8 <selftest_sp_fail>
+     3c0:	010c6c13          	ori	s8,s8,16
+     3c4:	100c0c13          	addi	s8,s8,256
+
+000003c8 <selftest_sp_fail>:
+     3c8:	800004b7          	lui	s1,0x80000
+     3cc:	05000513          	li	a0,80
+     3d0:	20d00fef          	jal	t6,ddc <uart_tx>
+     3d4:	020c6c13          	ori	s8,s8,32
+     3d8:	100c0c13          	addi	s8,s8,256
+
+000003dc <st_evaluate>:
+     3dc:	00000f13          	li	t5,0
+     3e0:	0ffc7293          	zext.b	t0,s8
+     3e4:	00010337          	lui	t1,0x10
+     3e8:	f0030313          	addi	t1,t1,-256 # ff00 <UART_BAUD_RATE+0xd980>
+     3ec:	006c7333          	and	t1,s8,t1
+     3f0:	00835313          	srli	t1,t1,0x8
+     3f4:	00ff03b7          	lui	t2,0xff0
+     3f8:	007c73b3          	and	t2,s8,t2
+     3fc:	0103d393          	srli	t2,t2,0x10
+     400:	ffa30e13          	addi	t3,t1,-6
+     404:	01c03e33          	snez	t3,t3
+     408:	00020eb7          	lui	t4,0x20
+     40c:	000e1663          	bnez	t3,418 <st_evaluate+0x3c>
+     410:	01df6f33          	or	t5,t5,t4
+     414:	00c0006f          	j	420 <st_evaluate+0x44>
+     418:	fffece93          	not	t4,t4
+     41c:	01df7f33          	and	t5,t5,t4
+     420:	01229e93          	slli	t4,t0,0x12
+     424:	00fc0e37          	lui	t3,0xfc0
+     428:	01cefeb3          	and	t4,t4,t3
+     42c:	fffe4e13          	not	t3,t3
+     430:	01cf7f33          	and	t5,t5,t3
+     434:	01df6f33          	or	t5,t5,t4
+     438:	00028a93          	mv	s5,t0
+     43c:	000f0b13          	mv	s6,t5
+     440:	10039463          	bnez	t2,548 <req_self_test_res>
+     444:	000f0d13          	mv	s10,t5
+
+00000448 <reset>:
+     448:	800004b7          	lui	s1,0x80000
+     44c:	00000c93          	li	s9,0
+     450:	ffff0337          	lui	t1,0xffff0
+     454:	006d7d33          	and	s10,s10,t1
+     458:	00000d93          	li	s11,0
+     45c:	00022137          	lui	sp,0x22
+     460:	00000713          	li	a4,0
+     464:	000202b7          	lui	t0,0x20
+     468:	005d72b3          	and	t0,s10,t0
+     46c:	420286e3          	beqz	t0,1098 <st_fail_idle>
+
+00000470 <update>:
+     470:	34d000ef          	jal	fbc <sync_bios_telemetry>
+
+00000474 <idle>:
+     474:	00022137          	lui	sp,0x22
+     478:	00000713          	li	a4,0
+     47c:	00000793          	li	a5,0
+     480:	00000813          	li	a6,0
+     484:	1b9000ef          	jal	e3c <update_state>
+     488:	00100893          	li	a7,1
+     48c:	11d00fef          	jal	t6,da8 <uart_rx>
+     490:	00050293          	mv	t0,a0
+     494:	00000893          	li	a7,0
+     498:	0cc00313          	li	t1,204
+     49c:	74628c63          	beq	t0,t1,bf4 <program_run>
+     4a0:	03a00313          	li	t1,58
+     4a4:	04628863          	beq	t0,t1,4f4 <msg_echo>
+     4a8:	05a00313          	li	t1,90
+     4ac:	06628e63          	beq	t0,t1,528 <req_self_test>
+     4b0:	07a00313          	li	t1,122
+     4b4:	16628263          	beq	t0,t1,618 <telemetry>
+     4b8:	07d00313          	li	t1,125
+     4bc:	2a628063          	beq	t0,t1,75c <telemetry_status>
+     4c0:	08a00313          	li	t1,138
+     4c4:	32628c63          	beq	t0,t1,7fc <memdump>
+     4c8:	0aa00313          	li	t1,170
+     4cc:	34628a63          	beq	t0,t1,820 <connect>
+     4d0:	0ca00313          	li	t1,202
+     4d4:	3a628463          	beq	t0,t1,87c <program_load>
+     4d8:	0cb00313          	li	t1,203
+     4dc:	5c628c63          	beq	t0,t1,ab4 <program_verify>
+     4e0:	0da00313          	li	t1,218
+     4e4:	5e628a63          	beq	t0,t1,ad8 <device_data>
+     4e8:	0ef00513          	li	a0,239
+     4ec:	00200593          	li	a1,2
+     4f0:	3450006f          	j	1034 <error_handler>
+
+000004f4 <msg_echo>:
+     4f4:	00300813          	li	a6,3
+     4f8:	145000ef          	jal	e3c <update_state>
+     4fc:	000225b7          	lui	a1,0x22
+     500:	80058593          	addi	a1,a1,-2048 # 21800 <MSG_ECHO_BUF>
+     504:	1b5000ef          	jal	eb8 <gets>
+     508:	00050b93          	mv	s7,a0
+     50c:	03a00513          	li	a0,58
+     510:	0cd00fef          	jal	t6,ddc <uart_tx>
+     514:	000b8513          	mv	a0,s7
+     518:	211000ef          	jal	f28 <puts>
+     51c:	03f00513          	li	a0,63
+     520:	0bd00fef          	jal	t6,ddc <uart_tx>
+     524:	f51ff06f          	j	474 <idle>
+
+00000528 <req_self_test>:
+     528:	00500813          	li	a6,5
+     52c:	111000ef          	jal	e3c <update_state>
+     530:	000212b7          	lui	t0,0x21
+     534:	0192a223          	sw	s9,4(t0) # 21004 <PROGRAM_TOP+0x4>
+     538:	01a2a423          	sw	s10,8(t0)
+     53c:	01b2a623          	sw	s11,12(t0)
+     540:	00010c37          	lui	s8,0x10
+     544:	ac1ff06f          	j	4 <self_test>
+
+00000548 <req_self_test_res>:
+     548:	000212b7          	lui	t0,0x21
+     54c:	0042ac83          	lw	s9,4(t0) # 21004 <PROGRAM_TOP+0x4>
+     550:	0082ad03          	lw	s10,8(t0)
+     554:	00c2ad83          	lw	s11,12(t0)
+     558:	800004b7          	lui	s1,0x80000
+     55c:	00ff02b7          	lui	t0,0xff0
+     560:	005b72b3          	and	t0,s6,t0
+     564:	ff00e337          	lui	t1,0xff00e
+     568:	fff30313          	addi	t1,t1,-1 # ff00dfff <ADDR_META_CYCLES+0x7f00cfeb>
+     56c:	006d7d33          	and	s10,s10,t1
+     570:	005d6d33          	or	s10,s10,t0
+     574:	008000ef          	jal	57c <display_self_test_results>
+     578:	3110006f          	j	1088 <idle_or_stfail>
+
+0000057c <display_self_test_results>:
+     57c:	ffc10113          	addi	sp,sp,-4 # 21ffc <REG_DUMP_BUF+0x6fc>
+     580:	00112023          	sw	ra,0(sp)
+     584:	00001297          	auipc	t0,0x1
+     588:	b5028293          	addi	t0,t0,-1200 # 10d4 <bios_start_msg_len>
+     58c:	0002a503          	lw	a0,0(t0)
+     590:	00001597          	auipc	a1,0x1
+     594:	b4858593          	addi	a1,a1,-1208 # 10d8 <bios_start_msg>
+     598:	191000ef          	jal	f28 <puts>
+     59c:	03f00513          	li	a0,63
+     5a0:	03d00fef          	jal	t6,ddc <uart_tx>
+     5a4:	000202b7          	lui	t0,0x20
+     5a8:	005d72b3          	and	t0,s10,t0
+     5ac:	00028863          	beqz	t0,5bc <display_self_test_results+0x40>
+     5b0:	05c00513          	li	a0,92
+     5b4:	02900fef          	jal	t6,ddc <uart_tx>
+     5b8:	00c0006f          	j	5c4 <display_self_test_results+0x48>
+     5bc:	05e00513          	li	a0,94
+     5c0:	01d00fef          	jal	t6,ddc <uart_tx>
+     5c4:	012d5293          	srli	t0,s10,0x12
+     5c8:	03f2f293          	andi	t0,t0,63
+     5cc:	00000393          	li	t2,0
+     5d0:	00600e13          	li	t3,6
+     5d4:	00000e93          	li	t4,0
+     5d8:	05d00513          	li	a0,93
+     5dc:	00100fef          	jal	t6,ddc <uart_tx>
+     5e0:	00038513          	mv	a0,t2
+     5e4:	7f800fef          	jal	t6,ddc <uart_tx>
+     5e8:	01d2d333          	srl	t1,t0,t4
+     5ec:	00137313          	andi	t1,t1,1
+     5f0:	00603533          	snez	a0,t1
+     5f4:	7e800fef          	jal	t6,ddc <uart_tx>
+     5f8:	00138393          	addi	t2,t2,1 # ff0001 <CONNECTION_TIMEOUT_CYCLES+0x1a3335>
+     5fc:	001e8e93          	addi	t4,t4,1 # 20001 <RAM_SIZE+0x1>
+     600:	ffde10e3          	bne	t3,t4,5e0 <display_self_test_results+0x64>
+     604:	05f00513          	li	a0,95
+     608:	7d400fef          	jal	t6,ddc <uart_tx>
+     60c:	00012083          	lw	ra,0(sp)
+     610:	00410113          	addi	sp,sp,4
+     614:	00008067          	ret
+
+00000618 <telemetry>:
+     618:	00700813          	li	a6,7
+     61c:	021000ef          	jal	e3c <update_state>
+     620:	00400e93          	li	t4,4
+     624:	00000e13          	li	t3,0
+     628:	78000fef          	jal	t6,da8 <uart_rx>
+     62c:	07a00293          	li	t0,122
+     630:	0a550463          	beq	a0,t0,6d8 <telemetry+0xc0>
+     634:	100e8e63          	beqz	t4,750 <telemetry+0x138>
+     638:	07000293          	li	t0,112
+     63c:	02550063          	beq	a0,t0,65c <telemetry+0x44>
+     640:	07100293          	li	t0,113
+     644:	02550063          	beq	a0,t0,664 <telemetry+0x4c>
+     648:	07200293          	li	t0,114
+     64c:	02550063          	beq	a0,t0,66c <telemetry+0x54>
+     650:	07300293          	li	t0,115
+     654:	04550c63          	beq	a0,t0,6ac <telemetry+0x94>
+     658:	0e00006f          	j	738 <telemetry+0x120>
+     65c:	00a00313          	li	t1,10
+     660:	0140006f          	j	674 <telemetry+0x5c>
+     664:	00b00313          	li	t1,11
+     668:	00c0006f          	j	674 <telemetry+0x5c>
+     66c:	00c00313          	li	t1,12
+     670:	0040006f          	j	674 <telemetry+0x5c>
+     674:	00100293          	li	t0,1
+     678:	006292b3          	sll	t0,t0,t1
+     67c:	72c00fef          	jal	t6,da8 <uart_rx>
+     680:	00100393          	li	t2,1
+     684:	00750863          	beq	a0,t2,694 <telemetry+0x7c>
+     688:	00000393          	li	t2,0
+     68c:	00750863          	beq	a0,t2,69c <telemetry+0x84>
+     690:	0b40006f          	j	744 <telemetry+0x12c>
+     694:	005d6d33          	or	s10,s10,t0
+     698:	00c0006f          	j	6a4 <telemetry+0x8c>
+     69c:	fff2c293          	not	t0,t0
+     6a0:	005d7d33          	and	s10,s10,t0
+     6a4:	fffe8e93          	addi	t4,t4,-1
+     6a8:	f81ff06f          	j	628 <telemetry+0x10>
+     6ac:	00100e13          	li	t3,1
+     6b0:	800012b7          	lui	t0,0x80001
+     6b4:	80001337          	lui	t1,0x80001
+     6b8:	00130313          	addi	t1,t1,1 # 80001001 <ADDR_META_CONTROL_RD>
+     6bc:	00034383          	lbu	t2,0(t1)
+     6c0:	00000013          	nop
+     6c4:	0013e393          	ori	t2,t2,1
+     6c8:	00728023          	sb	t2,0(t0) # 80001000 <ADDR_META_CONTROL>
+     6cc:	0fe3f393          	andi	t2,t2,254
+     6d0:	00728023          	sb	t2,0(t0)
+     6d4:	f55ff06f          	j	628 <telemetry+0x10>
+     6d8:	040e1e63          	bnez	t3,734 <telemetry+0x11c>
+     6dc:	ffce8313          	addi	t1,t4,-4
+     6e0:	04031a63          	bnez	t1,734 <telemetry+0x11c>
+     6e4:	07000513          	li	a0,112
+     6e8:	6f400fef          	jal	t6,ddc <uart_tx>
+     6ec:	40000313          	li	t1,1024
+     6f0:	006d7533          	and	a0,s10,t1
+     6f4:	00a03533          	snez	a0,a0
+     6f8:	6e400fef          	jal	t6,ddc <uart_tx>
+     6fc:	07100513          	li	a0,113
+     700:	6dc00fef          	jal	t6,ddc <uart_tx>
+     704:	00001337          	lui	t1,0x1
+     708:	80030313          	addi	t1,t1,-2048 # 800 <memdump+0x4>
+     70c:	006d7533          	and	a0,s10,t1
+     710:	00a03533          	snez	a0,a0
+     714:	6c800fef          	jal	t6,ddc <uart_tx>
+     718:	07200513          	li	a0,114
+     71c:	6c000fef          	jal	t6,ddc <uart_tx>
+     720:	00001337          	lui	t1,0x1
+     724:	006d7533          	and	a0,s10,t1
+     728:	00a03533          	snez	a0,a0
+     72c:	6b000fef          	jal	t6,ddc <uart_tx>
+     730:	d45ff06f          	j	474 <idle>
+     734:	d3dff06f          	j	470 <update>
+     738:	0e700513          	li	a0,231
+     73c:	00200593          	li	a1,2
+     740:	0f50006f          	j	1034 <error_handler>
+     744:	0e700513          	li	a0,231
+     748:	00300593          	li	a1,3
+     74c:	0e90006f          	j	1034 <error_handler>
+     750:	0e700513          	li	a0,231
+     754:	00100593          	li	a1,1
+     758:	0dd0006f          	j	1034 <error_handler>
+
+0000075c <telemetry_status>:
+     75c:	00700813          	li	a6,7
+     760:	6dc000ef          	jal	e3c <update_state>
+     764:	800012b7          	lui	t0,0x80001
+     768:	00028023          	sb	zero,0(t0) # 80001000 <ADDR_META_CONTROL>
+     76c:	07d00513          	li	a0,125
+     770:	66c00fef          	jal	t6,ddc <uart_tx>
+     774:	00000513          	li	a0,0
+     778:	66400fef          	jal	t6,ddc <uart_tx>
+     77c:	800012b7          	lui	t0,0x80001
+     780:	01428293          	addi	t0,t0,20 # 80001014 <ADDR_META_CYCLES>
+     784:	0002a503          	lw	a0,0(t0)
+     788:	668000ef          	jal	df0 <send_word>
+     78c:	00100513          	li	a0,1
+     790:	64c00fef          	jal	t6,ddc <uart_tx>
+     794:	800012b7          	lui	t0,0x80001
+     798:	00428293          	addi	t0,t0,4 # 80001004 <ADDR_META_INSTR>
+     79c:	0002a503          	lw	a0,0(t0)
+     7a0:	650000ef          	jal	df0 <send_word>
+     7a4:	00200513          	li	a0,2
+     7a8:	63400fef          	jal	t6,ddc <uart_tx>
+     7ac:	800012b7          	lui	t0,0x80001
+     7b0:	00828293          	addi	t0,t0,8 # 80001008 <ADDR_META_STALL>
+     7b4:	0002a503          	lw	a0,0(t0)
+     7b8:	638000ef          	jal	df0 <send_word>
+     7bc:	00300513          	li	a0,3
+     7c0:	61c00fef          	jal	t6,ddc <uart_tx>
+     7c4:	800012b7          	lui	t0,0x80001
+     7c8:	00c28293          	addi	t0,t0,12 # 8000100c <ADDR_META_L_USE>
+     7cc:	0002a503          	lw	a0,0(t0)
+     7d0:	620000ef          	jal	df0 <send_word>
+     7d4:	00400513          	li	a0,4
+     7d8:	60400fef          	jal	t6,ddc <uart_tx>
+     7dc:	800012b7          	lui	t0,0x80001
+     7e0:	01028293          	addi	t0,t0,16 # 80001010 <ADDR_META_BR_FLUSH>
+     7e4:	0002a503          	lw	a0,0(t0)
+     7e8:	608000ef          	jal	df0 <send_word>
+     7ec:	07d00513          	li	a0,125
+     7f0:	5ec00fef          	jal	t6,ddc <uart_tx>
+     7f4:	7c8000ef          	jal	fbc <sync_bios_telemetry>
+     7f8:	c7dff06f          	j	474 <idle>
+
+000007fc <memdump>:
+     7fc:	00800813          	li	a6,8
+     800:	63c000ef          	jal	e3c <update_state>
+     804:	60c000ef          	jal	e10 <get_word>
+     808:	00050b93          	mv	s7,a0
+     80c:	604000ef          	jal	e10 <get_word>
+     810:	00050593          	mv	a1,a0
+     814:	000b8513          	mv	a0,s7
+     818:	650000ef          	jal	e68 <mem_print>
+     81c:	c59ff06f          	j	474 <idle>
+
+00000820 <connect>:
+     820:	00a00813          	li	a6,10
+     824:	618000ef          	jal	e3c <update_state>
+     828:	0ab00513          	li	a0,171
+     82c:	5b000fef          	jal	t6,ddc <uart_tx>
+     830:	00e4d737          	lui	a4,0xe4d
+     834:	ccc70713          	addi	a4,a4,-820 # e4cccc <CONNECTION_TIMEOUT_CYCLES>
+     838:	00100793          	li	a5,1
+     83c:	56c00fef          	jal	t6,da8 <uart_rx>
+     840:	0ac00293          	li	t0,172
+     844:	02551263          	bne	a0,t0,868 <connect+0x48>
+     848:	100d6d13          	ori	s10,s10,256
+     84c:	000102b7          	lui	t0,0x10
+     850:	005d72b3          	and	t0,s10,t0
+     854:	00029863          	bnez	t0,864 <connect+0x44>
+     858:	d25ff0ef          	jal	57c <display_self_test_results>
+     85c:	000102b7          	lui	t0,0x10
+     860:	005d6d33          	or	s10,s10,t0
+     864:	0250006f          	j	1088 <idle_or_stfail>
+     868:	eff00293          	li	t0,-257
+     86c:	005d7d33          	and	s10,s10,t0
+     870:	0ea00513          	li	a0,234
+     874:	00100593          	li	a1,1
+     878:	7bc0006f          	j	1034 <error_handler>
+
+0000087c <program_load>:
+     87c:	00c00813          	li	a6,12
+     880:	5bc000ef          	jal	e3c <update_state>
+     884:	00000a13          	li	s4,0
+     888:	00002937          	lui	s2,0x2
+     88c:	00600e93          	li	t4,6
+     890:	0ca00293          	li	t0,202
+     894:	51400fef          	jal	t6,da8 <uart_rx>
+     898:	0a550863          	beq	a0,t0,948 <program_load+0xcc>
+     89c:	1e0e8463          	beqz	t4,a84 <program_load+0x208>
+     8a0:	0c000293          	li	t0,192
+     8a4:	02550863          	beq	a0,t0,8d4 <program_load+0x58>
+     8a8:	0c100293          	li	t0,193
+     8ac:	02550863          	beq	a0,t0,8dc <program_load+0x60>
+     8b0:	0c200293          	li	t0,194
+     8b4:	02550863          	beq	a0,t0,8e4 <program_load+0x68>
+     8b8:	0c300293          	li	t0,195
+     8bc:	02550e63          	beq	a0,t0,8f8 <program_load+0x7c>
+     8c0:	0c400293          	li	t0,196
+     8c4:	02550e63          	beq	a0,t0,900 <program_load+0x84>
+     8c8:	0c500293          	li	t0,197
+     8cc:	02550e63          	beq	a0,t0,908 <program_load+0x8c>
+     8d0:	19c0006f          	j	a6c <program_load+0x1f0>
+     8d4:	001a6a13          	ori	s4,s4,1
+     8d8:	0680006f          	j	940 <program_load+0xc4>
+     8dc:	002a6a13          	ori	s4,s4,2
+     8e0:	0600006f          	j	940 <program_load+0xc4>
+     8e4:	000e8a93          	mv	s5,t4
+     8e8:	528000ef          	jal	e10 <get_word>
+     8ec:	000a8e93          	mv	t4,s5
+     8f0:	00050913          	mv	s2,a0
+     8f4:	04c0006f          	j	940 <program_load+0xc4>
+     8f8:	00200313          	li	t1,2
+     8fc:	0140006f          	j	910 <program_load+0x94>
+     900:	00300313          	li	t1,3
+     904:	00c0006f          	j	910 <program_load+0x94>
+     908:	00400313          	li	t1,4
+     90c:	0040006f          	j	910 <program_load+0x94>
+     910:	00100293          	li	t0,1
+     914:	006292b3          	sll	t0,t0,t1
+     918:	49000fef          	jal	t6,da8 <uart_rx>
+     91c:	00000393          	li	t2,0
+     920:	00750863          	beq	a0,t2,930 <program_load+0xb4>
+     924:	00100393          	li	t2,1
+     928:	00750a63          	beq	a0,t2,93c <program_load+0xc0>
+     92c:	14c0006f          	j	a78 <program_load+0x1fc>
+     930:	fff2c293          	not	t0,t0
+     934:	005a7a33          	and	s4,s4,t0
+     938:	0080006f          	j	940 <program_load+0xc4>
+     93c:	005a6a33          	or	s4,s4,t0
+     940:	fffe8e93          	addi	t4,t4,-1
+     944:	f4dff06f          	j	890 <program_load+0x14>
+     948:	4c8000ef          	jal	e10 <get_word>
+     94c:	00050993          	mv	s3,a0
+     950:	000022b7          	lui	t0,0x2
+     954:	10596c63          	bltu	s2,t0,a6c <program_load+0x1f0>
+     958:	000212b7          	lui	t0,0x21
+     95c:	10597863          	bgeu	s2,t0,a6c <program_load+0x1f0>
+     960:	00397313          	andi	t1,s2,3
+     964:	12031c63          	bnez	t1,a9c <program_load+0x220>
+     968:	10098263          	beqz	s3,a6c <program_load+0x1f0>
+     96c:	0039f313          	andi	t1,s3,3
+     970:	12031c63          	bnez	t1,aa8 <program_load+0x22c>
+     974:	41228333          	sub	t1,t0,s2
+     978:	00800393          	li	t2,8
+     97c:	10736a63          	bltu	t1,t2,a90 <program_load+0x214>
+     980:	40730333          	sub	t1,t1,t2
+     984:	11336663          	bltu	t1,s3,a90 <program_load+0x214>
+     988:	ffffe2b7          	lui	t0,0xffffe
+     98c:	fff28293          	addi	t0,t0,-1 # ffffdfff <ADDR_META_CYCLES+0x7fffcfeb>
+     990:	005d7d33          	and	s10,s10,t0
+     994:	00090313          	mv	t1,s2
+     998:	00098293          	mv	t0,s3
+     99c:	40c00fef          	jal	t6,da8 <uart_rx>
+     9a0:	00a30023          	sb	a0,0(t1) # 1000 <timeout_handler+0x14>
+     9a4:	00130313          	addi	t1,t1,1
+     9a8:	fff28293          	addi	t0,t0,-1
+     9ac:	fe0298e3          	bnez	t0,99c <program_load+0x120>
+     9b0:	004a5393          	srli	t2,s4,0x4
+     9b4:	00038863          	beqz	t2,9c4 <program_load+0x148>
+     9b8:	00000397          	auipc	t2,0x0
+     9bc:	3e838393          	addi	t2,t2,1000 # da0 <tail_regdisp>
+     9c0:	00c0006f          	j	9cc <program_load+0x150>
+     9c4:	00000397          	auipc	t2,0x0
+     9c8:	3d438393          	addi	t2,t2,980 # d98 <tail_run>
+     9cc:	0003ae03          	lw	t3,0(t2)
+     9d0:	0043ae83          	lw	t4,4(t2)
+     9d4:	01c32023          	sw	t3,0(t1)
+     9d8:	01d32223          	sw	t4,4(t1)
+     9dc:	00090d93          	mv	s11,s2
+     9e0:	00098c93          	mv	s9,s3
+     9e4:	00002e37          	lui	t3,0x2
+     9e8:	01cd6d33          	or	s10,s10,t3
+     9ec:	0ca00513          	li	a0,202
+     9f0:	3ec00fef          	jal	t6,ddc <uart_tx>
+     9f4:	002a5393          	srli	t2,s4,0x2
+     9f8:	0013f393          	andi	t2,t2,1
+     9fc:	00038a63          	beqz	t2,a10 <program_load+0x194>
+     a00:	00001e37          	lui	t3,0x1
+     a04:	800e0e13          	addi	t3,t3,-2048 # 800 <memdump+0x4>
+     a08:	01cd6d33          	or	s10,s10,t3
+     a0c:	0100006f          	j	a1c <program_load+0x1a0>
+     a10:	fffffe37          	lui	t3,0xfffff
+     a14:	7ffe0e13          	addi	t3,t3,2047 # fffff7ff <ADDR_META_CYCLES+0x7fffe7eb>
+     a18:	01cd7d33          	and	s10,s10,t3
+     a1c:	003a5393          	srli	t2,s4,0x3
+     a20:	0013f393          	andi	t2,t2,1
+     a24:	00038863          	beqz	t2,a34 <program_load+0x1b8>
+     a28:	00001e37          	lui	t3,0x1
+     a2c:	01cd6d33          	or	s10,s10,t3
+     a30:	0100006f          	j	a40 <program_load+0x1c4>
+     a34:	fffffe37          	lui	t3,0xfffff
+     a38:	fffe0e13          	addi	t3,t3,-1 # ffffefff <ADDR_META_CYCLES+0x7fffdfeb>
+     a3c:	01cd7d33          	and	s10,s10,t3
+     a40:	001a5393          	srli	t2,s4,0x1
+     a44:	0013f393          	andi	t2,t2,1
+     a48:	00038c63          	beqz	t2,a60 <program_load+0x1e4>
+     a4c:	0cb00513          	li	a0,203
+     a50:	38c00fef          	jal	t6,ddc <uart_tx>
+     a54:	000c8513          	mv	a0,s9
+     a58:	000d8593          	mv	a1,s11
+     a5c:	40c000ef          	jal	e68 <mem_print>
+     a60:	001a7393          	andi	t2,s4,1
+     a64:	18039863          	bnez	t2,bf4 <program_run>
+     a68:	a09ff06f          	j	470 <update>
+     a6c:	0ec00513          	li	a0,236
+     a70:	00200593          	li	a1,2
+     a74:	5c00006f          	j	1034 <error_handler>
+     a78:	0ec00513          	li	a0,236
+     a7c:	00300593          	li	a1,3
+     a80:	5b40006f          	j	1034 <error_handler>
+     a84:	0ec00513          	li	a0,236
+     a88:	00200593          	li	a1,2
+     a8c:	5a80006f          	j	1034 <error_handler>
+     a90:	0ec00513          	li	a0,236
+     a94:	00400593          	li	a1,4
+     a98:	59c0006f          	j	1034 <error_handler>
+     a9c:	0ec00513          	li	a0,236
+     aa0:	00500593          	li	a1,5
+     aa4:	5900006f          	j	1034 <error_handler>
+     aa8:	0ec00513          	li	a0,236
+     aac:	00600593          	li	a1,6
+     ab0:	5840006f          	j	1034 <error_handler>
+
+00000ab4 <program_verify>:
+     ab4:	00800813          	li	a6,8
+     ab8:	384000ef          	jal	e3c <update_state>
+     abc:	000022b7          	lui	t0,0x2
+     ac0:	005d72b3          	and	t0,s10,t0
+     ac4:	1a028463          	beqz	t0,c6c <program_unverified>
+     ac8:	000c8513          	mv	a0,s9
+     acc:	000d8593          	mv	a1,s11
+     ad0:	398000ef          	jal	e68 <mem_print>
+     ad4:	9a1ff06f          	j	474 <idle>
+
+00000ad8 <device_data>:
+     ad8:	00d00813          	li	a6,13
+     adc:	360000ef          	jal	e3c <update_state>
+     ae0:	0da00513          	li	a0,218
+     ae4:	2f800fef          	jal	t6,ddc <uart_tx>
+     ae8:	00000513          	li	a0,0
+     aec:	2f000fef          	jal	t6,ddc <uart_tx>
+     af0:	00000297          	auipc	t0,0x0
+     af4:	62828293          	addi	t0,t0,1576 # 1118 <dd_name_len>
+     af8:	0002a503          	lw	a0,0(t0)
+     afc:	00000597          	auipc	a1,0x0
+     b00:	62058593          	addi	a1,a1,1568 # 111c <dd_name>
+     b04:	424000ef          	jal	f28 <puts>
+     b08:	00100513          	li	a0,1
+     b0c:	2d000fef          	jal	t6,ddc <uart_tx>
+     b10:	00000297          	auipc	t0,0x0
+     b14:	62428293          	addi	t0,t0,1572 # 1134 <dd_arch_len>
+     b18:	0002a503          	lw	a0,0(t0)
+     b1c:	00000597          	auipc	a1,0x0
+     b20:	61c58593          	addi	a1,a1,1564 # 1138 <dd_arch>
+     b24:	404000ef          	jal	f28 <puts>
+     b28:	00200513          	li	a0,2
+     b2c:	2b000fef          	jal	t6,ddc <uart_tx>
+     b30:	00000297          	auipc	t0,0x0
+     b34:	62028293          	addi	t0,t0,1568 # 1150 <dd_regc>
+     b38:	0002a503          	lw	a0,0(t0)
+     b3c:	2b4000ef          	jal	df0 <send_word>
+     b40:	00300513          	li	a0,3
+     b44:	29800fef          	jal	t6,ddc <uart_tx>
+     b48:	00000297          	auipc	t0,0x0
+     b4c:	60c28293          	addi	t0,t0,1548 # 1154 <dd_clk>
+     b50:	0002a503          	lw	a0,0(t0)
+     b54:	29c000ef          	jal	df0 <send_word>
+     b58:	00400513          	li	a0,4
+     b5c:	28000fef          	jal	t6,ddc <uart_tx>
+     b60:	00000297          	auipc	t0,0x0
+     b64:	5f828293          	addi	t0,t0,1528 # 1158 <dd_baud>
+     b68:	0002a503          	lw	a0,0(t0)
+     b6c:	284000ef          	jal	df0 <send_word>
+     b70:	00500513          	li	a0,5
+     b74:	26800fef          	jal	t6,ddc <uart_tx>
+     b78:	00000297          	auipc	t0,0x0
+     b7c:	57c28293          	addi	t0,t0,1404 # 10f4 <program_start>
+     b80:	0002a503          	lw	a0,0(t0)
+     b84:	26c000ef          	jal	df0 <send_word>
+     b88:	00600513          	li	a0,6
+     b8c:	25000fef          	jal	t6,ddc <uart_tx>
+     b90:	00000297          	auipc	t0,0x0
+     b94:	56828293          	addi	t0,t0,1384 # 10f8 <ram_size>
+     b98:	0002a503          	lw	a0,0(t0)
+     b9c:	254000ef          	jal	df0 <send_word>
+     ba0:	00700513          	li	a0,7
+     ba4:	23800fef          	jal	t6,ddc <uart_tx>
+     ba8:	00000297          	auipc	t0,0x0
+     bac:	54c28293          	addi	t0,t0,1356 # 10f4 <program_start>
+     bb0:	0002a503          	lw	a0,0(t0)
+     bb4:	23c000ef          	jal	df0 <send_word>
+     bb8:	00800513          	li	a0,8
+     bbc:	22000fef          	jal	t6,ddc <uart_tx>
+     bc0:	00000297          	auipc	t0,0x0
+     bc4:	54428293          	addi	t0,t0,1348 # 1104 <program_size>
+     bc8:	0002a503          	lw	a0,0(t0)
+     bcc:	224000ef          	jal	df0 <send_word>
+     bd0:	00900513          	li	a0,9
+     bd4:	20800fef          	jal	t6,ddc <uart_tx>
+     bd8:	00000513          	li	a0,0
+     bdc:	214000ef          	jal	df0 <send_word>
+     be0:	00a00513          	li	a0,10
+     be4:	1f800fef          	jal	t6,ddc <uart_tx>
+     be8:	00002537          	lui	a0,0x2
+     bec:	204000ef          	jal	df0 <send_word>
+     bf0:	885ff06f          	j	474 <idle>
+
+00000bf4 <program_run>:
+     bf4:	000022b7          	lui	t0,0x2
+     bf8:	005d72b3          	and	t0,s10,t0
+     bfc:	06028863          	beqz	t0,c6c <program_unverified>
+     c00:	000213b7          	lui	t2,0x21
+     c04:	0193a223          	sw	s9,4(t2) # 21004 <PROGRAM_TOP+0x4>
+     c08:	01a3a423          	sw	s10,8(t2)
+     c0c:	01b3a623          	sw	s11,12(t2)
+     c10:	01c00813          	li	a6,28
+     c14:	228000ef          	jal	e3c <update_state>
+     c18:	00bd5293          	srli	t0,s10,0xb
+     c1c:	0012f293          	andi	t0,t0,1
+     c20:	00cd5313          	srli	t1,s10,0xc
+     c24:	00137313          	andi	t1,t1,1
+     c28:	800013b7          	lui	t2,0x80001
+     c2c:	80001eb7          	lui	t4,0x80001
+     c30:	001e8e93          	addi	t4,t4,1 # 80001001 <ADDR_META_CONTROL_RD>
+     c34:	000ece03          	lbu	t3,0(t4)
+     c38:	00028663          	beqz	t0,c44 <program_run+0x50>
+     c3c:	002e6e13          	ori	t3,t3,2
+     c40:	0080006f          	j	c48 <program_run+0x54>
+     c44:	0fde7e13          	andi	t3,t3,253
+     c48:	01c38023          	sb	t3,0(t2) # 80001000 <ADDR_META_CONTROL>
+     c4c:	00030a63          	beqz	t1,c60 <program_run+0x6c>
+     c50:	001e6e13          	ori	t3,t3,1
+     c54:	01c38023          	sb	t3,0(t2)
+     c58:	0fee7e13          	andi	t3,t3,254
+     c5c:	01c38023          	sb	t3,0(t2)
+     c60:	00021137          	lui	sp,0x21
+     c64:	019d80b3          	add	ra,s11,s9
+     c68:	000d8067          	jr	s11
+
+00000c6c <program_unverified>:
+     c6c:	0ec00513          	li	a0,236
+     c70:	00100593          	li	a1,1
+     c74:	3c00006f          	j	1034 <error_handler>
+
+00000c78 <jump_back>:
+     c78:	800012b7          	lui	t0,0x80001
+     c7c:	00028023          	sb	zero,0(t0) # 80001000 <ADDR_META_CONTROL>
+     c80:	02c00813          	li	a6,44
+     c84:	1b8000ef          	jal	e3c <update_state>
+     c88:	000212b7          	lui	t0,0x21
+     c8c:	0042ac83          	lw	s9,4(t0) # 21004 <PROGRAM_TOP+0x4>
+     c90:	0082ad03          	lw	s10,8(t0)
+     c94:	00c2ad83          	lw	s11,12(t0)
+     c98:	800004b7          	lui	s1,0x80000
+     c9c:	00022137          	lui	sp,0x22
+     ca0:	31c000ef          	jal	fbc <sync_bios_telemetry>
+     ca4:	fd0ff06f          	j	474 <idle>
+
+00000ca8 <jump_back_reg_disp>:
+     ca8:	00022fb7          	lui	t6,0x22
+     cac:	900f8f93          	addi	t6,t6,-1792 # 21900 <REG_DUMP_BUF>
+     cb0:	001fa023          	sw	ra,0(t6)
+     cb4:	002fa223          	sw	sp,4(t6)
+     cb8:	003fa423          	sw	gp,8(t6)
+     cbc:	004fa623          	sw	tp,12(t6)
+     cc0:	005fa823          	sw	t0,16(t6)
+     cc4:	006faa23          	sw	t1,20(t6)
+     cc8:	007fac23          	sw	t2,24(t6)
+     ccc:	008fae23          	sw	s0,28(t6)
+     cd0:	029fa023          	sw	s1,32(t6)
+     cd4:	02afa223          	sw	a0,36(t6)
+     cd8:	02bfa423          	sw	a1,40(t6)
+     cdc:	02cfa623          	sw	a2,44(t6)
+     ce0:	02dfa823          	sw	a3,48(t6)
+     ce4:	02efaa23          	sw	a4,52(t6)
+     ce8:	02ffac23          	sw	a5,56(t6)
+     cec:	030fae23          	sw	a6,60(t6)
+     cf0:	051fa023          	sw	a7,64(t6)
+     cf4:	052fa223          	sw	s2,68(t6)
+     cf8:	053fa423          	sw	s3,72(t6)
+     cfc:	054fa623          	sw	s4,76(t6)
+     d00:	055fa823          	sw	s5,80(t6)
+     d04:	056faa23          	sw	s6,84(t6)
+     d08:	057fac23          	sw	s7,88(t6)
+     d0c:	058fae23          	sw	s8,92(t6)
+     d10:	079fa023          	sw	s9,96(t6)
+     d14:	07afa223          	sw	s10,100(t6)
+     d18:	07bfa423          	sw	s11,104(t6)
+     d1c:	07cfa623          	sw	t3,108(t6)
+     d20:	07dfa823          	sw	t4,112(t6)
+     d24:	07efaa23          	sw	t5,116(t6)
+     d28:	060fac23          	sw	zero,120(t6)
+     d2c:	02c00813          	li	a6,44
+     d30:	10c000ef          	jal	e3c <update_state>
+     d34:	000212b7          	lui	t0,0x21
+     d38:	0042ac83          	lw	s9,4(t0) # 21004 <PROGRAM_TOP+0x4>
+     d3c:	0082ad03          	lw	s10,8(t0)
+     d40:	00c2ad83          	lw	s11,12(t0)
+     d44:	800004b7          	lui	s1,0x80000
+     d48:	00022137          	lui	sp,0x22
+     d4c:	270000ef          	jal	fbc <sync_bios_telemetry>
+     d50:	80001fb7          	lui	t6,0x80001
+     d54:	000f8023          	sb	zero,0(t6) # 80001000 <ADDR_META_CONTROL>
+     d58:	000223b7          	lui	t2,0x22
+     d5c:	90038393          	addi	t2,t2,-1792 # 21900 <REG_DUMP_BUF>
+     d60:	07500513          	li	a0,117
+     d64:	07800fef          	jal	t6,ddc <uart_tx>
+     d68:	00100e93          	li	t4,1
+     d6c:	000e8513          	mv	a0,t4
+     d70:	06c00fef          	jal	t6,ddc <uart_tx>
+     d74:	0003a503          	lw	a0,0(t2)
+     d78:	078000ef          	jal	df0 <send_word>
+     d7c:	00438393          	addi	t2,t2,4
+     d80:	001e8e93          	addi	t4,t4,1
+     d84:	02000f13          	li	t5,32
+     d88:	ffee92e3          	bne	t4,t5,d6c <jump_back_reg_disp+0xc4>
+     d8c:	07500513          	li	a0,117
+     d90:	04c00fef          	jal	t6,ddc <uart_tx>
+     d94:	ee0ff06f          	j	474 <idle>
+
+00000d98 <tail_run>:
+     d98:	00001fb7          	lui	t6,0x1
+     d9c:	c78f8067          	jr	-904(t6) # c78 <jump_back>
+
+00000da0 <tail_regdisp>:
+     da0:	00001fb7          	lui	t6,0x1
+     da4:	ca8f8067          	jr	-856(t6) # ca8 <jump_back_reg_disp>
+
+00000da8 <uart_rx>:
+     da8:	00666f37          	lui	t5,0x666
+     dac:	666f0f13          	addi	t5,t5,1638 # 666666 <DEFAULT_TIMEOUT_CYCLE>
+     db0:	00070463          	beqz	a4,db8 <uart_rx+0x10>
+     db4:	00070f13          	mv	t5,a4
+     db8:	0004c503          	lbu	a0,0(s1) # 80000000 <UART_STATUS>
+     dbc:	ffff0f13          	addi	t5,t5,-1
+     dc0:	220f0663          	beqz	t5,fec <timeout_handler>
+     dc4:	00157513          	andi	a0,a0,1
+     dc8:	fe0508e3          	beqz	a0,db8 <uart_rx+0x10>
+     dcc:	0044c503          	lbu	a0,4(s1)
+     dd0:	00000713          	li	a4,0
+     dd4:	00000793          	li	a5,0
+     dd8:	000f8067          	jr	t6
+
+00000ddc <uart_tx>:
+     ddc:	0004cf03          	lbu	t5,0(s1)
+     de0:	002f7f13          	andi	t5,t5,2
+     de4:	fe0f1ce3          	bnez	t5,ddc <uart_tx>
+     de8:	00a48423          	sb	a0,8(s1)
+     dec:	000f8067          	jr	t6
+
+00000df0 <send_word>:
+     df0:	00400293          	li	t0,4
+     df4:	00050313          	mv	t1,a0
+     df8:	fe5fffef          	jal	t6,ddc <uart_tx>
+     dfc:	00835313          	srli	t1,t1,0x8
+     e00:	00030513          	mv	a0,t1
+     e04:	fff28293          	addi	t0,t0,-1
+     e08:	fe0298e3          	bnez	t0,df8 <send_word+0x8>
+     e0c:	00008067          	ret
+
+00000e10 <get_word>:
+     e10:	00400293          	li	t0,4
+     e14:	00000313          	li	t1,0
+     e18:	00000e13          	li	t3,0
+     e1c:	f8dfffef          	jal	t6,da8 <uart_rx>
+     e20:	006513b3          	sll	t2,a0,t1
+     e24:	007e6e33          	or	t3,t3,t2
+     e28:	00830313          	addi	t1,t1,8
+     e2c:	fff28293          	addi	t0,t0,-1
+     e30:	fe0296e3          	bnez	t0,e1c <get_word+0xc>
+     e34:	000e0513          	mv	a0,t3
+     e38:	00008067          	ret
+
+00000e3c <update_state>:
+     e3c:	0ff87813          	zext.b	a6,a6
+     e40:	f0000293          	li	t0,-256
+     e44:	005d7d33          	and	s10,s10,t0
+     e48:	010d6d33          	or	s10,s10,a6
+     e4c:	00050313          	mv	t1,a0
+     e50:	0f000513          	li	a0,240
+     e54:	f89fffef          	jal	t6,ddc <uart_tx>
+     e58:	00080513          	mv	a0,a6
+     e5c:	f81fffef          	jal	t6,ddc <uart_tx>
+     e60:	00030513          	mv	a0,t1
+     e64:	00008067          	ret
+
+00000e68 <mem_print>:
+     e68:	ffc10113          	addi	sp,sp,-4 # 21ffc <REG_DUMP_BUF+0x6fc>
+     e6c:	00112023          	sw	ra,0(sp)
+     e70:	00050393          	mv	t2,a0
+     e74:	120000ef          	jal	f94 <check_size>
+     e78:	02050a63          	beqz	a0,eac <mem_print+0x44>
+     e7c:	08c00513          	li	a0,140
+     e80:	f5dfffef          	jal	t6,ddc <uart_tx>
+     e84:	00038293          	mv	t0,t2
+     e88:	00058313          	mv	t1,a1
+     e8c:	00034503          	lbu	a0,0(t1)
+     e90:	f4dfffef          	jal	t6,ddc <uart_tx>
+     e94:	fff28293          	addi	t0,t0,-1
+     e98:	00130313          	addi	t1,t1,1
+     e9c:	fe0298e3          	bnez	t0,e8c <mem_print+0x24>
+     ea0:	00012083          	lw	ra,0(sp)
+     ea4:	00410113          	addi	sp,sp,4
+     ea8:	00008067          	ret
+     eac:	0e800513          	li	a0,232
+     eb0:	00100593          	li	a1,1
+     eb4:	1800006f          	j	1034 <error_handler>
+
+00000eb8 <gets>:
+     eb8:	ffc10113          	addi	sp,sp,-4
+     ebc:	00112023          	sw	ra,0(sp)
+     ec0:	ee9fffef          	jal	t6,da8 <uart_rx>
+     ec4:	03d00293          	li	t0,61
+     ec8:	04551a63          	bne	a0,t0,f1c <gets+0x64>
+     ecc:	f45ff0ef          	jal	e10 <get_word>
+     ed0:	00050a13          	mv	s4,a0
+     ed4:	10000293          	li	t0,256
+     ed8:	02a2ec63          	bltu	t0,a0,f10 <gets+0x58>
+     edc:	0b8000ef          	jal	f94 <check_size>
+     ee0:	02050863          	beqz	a0,f10 <gets+0x58>
+     ee4:	000a0313          	mv	t1,s4
+     ee8:	00058293          	mv	t0,a1
+     eec:	ebdfffef          	jal	t6,da8 <uart_rx>
+     ef0:	00a28023          	sb	a0,0(t0)
+     ef4:	00128293          	addi	t0,t0,1
+     ef8:	fff30313          	addi	t1,t1,-1
+     efc:	fe0318e3          	bnez	t1,eec <gets+0x34>
+     f00:	000a0513          	mv	a0,s4
+     f04:	00012083          	lw	ra,0(sp)
+     f08:	00410113          	addi	sp,sp,4
+     f0c:	00008067          	ret
+     f10:	0e300513          	li	a0,227
+     f14:	00100593          	li	a1,1
+     f18:	11c0006f          	j	1034 <error_handler>
+     f1c:	0e300513          	li	a0,227
+     f20:	00300593          	li	a1,3
+     f24:	1100006f          	j	1034 <error_handler>
+
+00000f28 <puts>:
+     f28:	ffc10113          	addi	sp,sp,-4
+     f2c:	00112023          	sw	ra,0(sp)
+     f30:	00050a13          	mv	s4,a0
+     f34:	060000ef          	jal	f94 <check_size>
+     f38:	04050863          	beqz	a0,f88 <puts+0x60>
+     f3c:	000a0313          	mv	t1,s4
+     f40:	00058293          	mv	t0,a1
+     f44:	03d00513          	li	a0,61
+     f48:	e95fffef          	jal	t6,ddc <uart_tx>
+     f4c:	000a0393          	mv	t2,s4
+     f50:	00400e13          	li	t3,4
+     f54:	00038513          	mv	a0,t2
+     f58:	e85fffef          	jal	t6,ddc <uart_tx>
+     f5c:	0083d393          	srli	t2,t2,0x8
+     f60:	fffe0e13          	addi	t3,t3,-1
+     f64:	fe0e18e3          	bnez	t3,f54 <puts+0x2c>
+     f68:	00028503          	lb	a0,0(t0)
+     f6c:	e71fffef          	jal	t6,ddc <uart_tx>
+     f70:	00128293          	addi	t0,t0,1
+     f74:	fff30313          	addi	t1,t1,-1
+     f78:	fe0318e3          	bnez	t1,f68 <puts+0x40>
+     f7c:	00012083          	lw	ra,0(sp)
+     f80:	00410113          	addi	sp,sp,4
+     f84:	00008067          	ret
+     f88:	0e300513          	li	a0,227
+     f8c:	00200593          	li	a1,2
+     f90:	0a40006f          	j	1034 <error_handler>
+
+00000f94 <check_size>:
+     f94:	000222b7          	lui	t0,0x22
+     f98:	fc028293          	addi	t0,t0,-64 # 21fc0 <REG_DUMP_BUF+0x6c0>
+     f9c:	0055fc63          	bgeu	a1,t0,fb4 <check_size+0x20>
+     fa0:	00050a63          	beqz	a0,fb4 <check_size+0x20>
+     fa4:	40b28333          	sub	t1,t0,a1
+     fa8:	00a33533          	sltu	a0,t1,a0
+     fac:	00154513          	xori	a0,a0,1
+     fb0:	00008067          	ret
+     fb4:	00000513          	li	a0,0
+     fb8:	ff9ff06f          	j	fb0 <check_size+0x1c>
+
+00000fbc <sync_bios_telemetry>:
+     fbc:	00ad5293          	srli	t0,s10,0xa
+     fc0:	0012f293          	andi	t0,t0,1
+     fc4:	80001337          	lui	t1,0x80001
+     fc8:	800013b7          	lui	t2,0x80001
+     fcc:	00138393          	addi	t2,t2,1 # 80001001 <ADDR_META_CONTROL_RD>
+     fd0:	0003ce03          	lbu	t3,0(t2)
+     fd4:	00028663          	beqz	t0,fe0 <sync_bios_telemetry+0x24>
+     fd8:	002e6e13          	ori	t3,t3,2
+     fdc:	0080006f          	j	fe4 <sync_bios_telemetry+0x28>
+     fe0:	0fde7e13          	andi	t3,t3,253
+     fe4:	01c30023          	sb	t3,0(t1) # 80001000 <ADDR_META_CONTROL>
+     fe8:	00008067          	ret
+
+00000fec <timeout_handler>:
+     fec:	02089463          	bnez	a7,1014 <timeout_handler+0x28>
+     ff0:	00078863          	beqz	a5,1000 <timeout_handler+0x14>
+     ff4:	fff78313          	addi	t1,a5,-1
+     ff8:	02030063          	beqz	t1,1018 <connection_timeout_handler>
+     ffc:	0480006f          	j	1044 <critical_error>
+    1000:	0ef00513          	li	a0,239
+    1004:	dd9fffef          	jal	t6,ddc <uart_tx>
+    1008:	00100513          	li	a0,1
+    100c:	dd1fffef          	jal	t6,ddc <uart_tx>
+    1010:	0400006f          	j	1050 <rx_cooldown>
+    1014:	0740006f          	j	1088 <idle_or_stfail>
+
+00001018 <connection_timeout_handler>:
+    1018:	0ea00513          	li	a0,234
+    101c:	dc1fffef          	jal	t6,ddc <uart_tx>
+    1020:	00200513          	li	a0,2
+    1024:	db9fffef          	jal	t6,ddc <uart_tx>
+    1028:	eff00293          	li	t0,-257
+    102c:	005d7d33          	and	s10,s10,t0
+    1030:	0200006f          	j	1050 <rx_cooldown>
+
+00001034 <error_handler>:
+    1034:	da9fffef          	jal	t6,ddc <uart_tx>
+    1038:	00058513          	mv	a0,a1
+    103c:	da1fffef          	jal	t6,ddc <uart_tx>
+    1040:	0100006f          	j	1050 <rx_cooldown>
+
+00001044 <critical_error>:
+    1044:	0ee00513          	li	a0,238
+    1048:	d95fffef          	jal	t6,ddc <uart_tx>
+    104c:	bfcff06f          	j	448 <reset>
+
+00001050 <rx_cooldown>:
+    1050:	0004cf03          	lbu	t5,0(s1)
+    1054:	002f7f13          	andi	t5,t5,2
+    1058:	fe0f1ce3          	bnez	t5,1050 <rx_cooldown>
+    105c:	00001f37          	lui	t5,0x1
+    1060:	455f0f13          	addi	t5,t5,1109 # 1455 <DRAIN_QUIET_ITER>
+    1064:	0004c283          	lbu	t0,0(s1)
+    1068:	0012f293          	andi	t0,t0,1
+    106c:	00028863          	beqz	t0,107c <rx_cooldown+0x2c>
+    1070:	0044c283          	lbu	t0,4(s1)
+    1074:	00001f37          	lui	t5,0x1
+    1078:	455f0f13          	addi	t5,t5,1109 # 1455 <DRAIN_QUIET_ITER>
+    107c:	ffff0f13          	addi	t5,t5,-1
+    1080:	fe0f12e3          	bnez	t5,1064 <rx_cooldown+0x14>
+    1084:	0040006f          	j	1088 <idle_or_stfail>
+
+00001088 <idle_or_stfail>:
+    1088:	000202b7          	lui	t0,0x20
+    108c:	005d72b3          	and	t0,s10,t0
+    1090:	00028463          	beqz	t0,1098 <st_fail_idle>
+    1094:	be0ff06f          	j	474 <idle>
+
+00001098 <st_fail_idle>:
+    1098:	00022137          	lui	sp,0x22
+    109c:	00000713          	li	a4,0
+    10a0:	00000793          	li	a5,0
+    10a4:	05000813          	li	a6,80
+    10a8:	d95ff0ef          	jal	e3c <update_state>
+    10ac:	00100893          	li	a7,1
+    10b0:	cf9fffef          	jal	t6,da8 <uart_rx>
+    10b4:	00000893          	li	a7,0
+    10b8:	0aa00313          	li	t1,170
+    10bc:	f6650263          	beq	a0,t1,820 <connect>
+    10c0:	05a00313          	li	t1,90
+    10c4:	c6650263          	beq	a0,t1,528 <req_self_test>
+    10c8:	0ef00513          	li	a0,239
+    10cc:	00200593          	li	a1,2
+    10d0:	f65ff06f          	j	1034 <error_handler>

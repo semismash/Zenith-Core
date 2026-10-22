@@ -97,6 +97,13 @@ namespace client_mod {
         RegFrame,           // 31x [reg, u32], 75
         DdHeader,           // DA
         DdBody,             // 00 str, 01 str, 02..0A [param, u32]
+
+        // entered from Stage::None when a raw byte (sendbyte/sendbytes) triggers a BIOS reply with
+        // no active transaction to say which reply shape to expect. MSG/ST/DD reuse the stages above
+        // (their own leading byte is enough to tell them apart). META and NET need one extra byte of
+        // lookahead, since the same state code covers more than one reply shape.
+        AutoMeta,           // F0 07 with no active tx: 7D -> status, 70/71/72 -> query, F0 -> set (empty body)
+        AutoNet,            // F0 0A with no active tx: AB -> syn-ack, otherwise -> the ACK's POST frame
     };
 
     // pure logic: state + byte + time in, events out. No locks, no io, so recorded BIOS byte
@@ -151,6 +158,7 @@ namespace client_mod {
             Stage after_own{Stage::None};
             bool pending_f0{false};
             std::optional<uint8_t> pending_err{};
+            bool auto_net_ack{false};       // set while AutoNet is waiting out a raw-triggered ACK's POST frame, so its completion still sets `linked`
             std::vector<uint8_t> data_buf{};
             StrFrame str{};
             uint32_t mem_expected{0};
@@ -191,6 +199,7 @@ namespace client_mod {
             bool data_byte(uint8_t byte, responses::Events& ev, TimePoint now);
             void dd_byte(uint8_t byte, responses::Events& ev, TimePoint now);
             void state_byte(uint8_t st, responses::Events& ev, TimePoint now);
+            void begin_auto(uint8_t st, responses::Events& ev, TimePoint now);
             void cooldown_byte(uint8_t byte, responses::Events& ev, TimePoint now);
             void program_byte(uint8_t byte, responses::Events& ev, TimePoint now);
             void str_byte(uint8_t byte, responses::Events& ev, TimePoint now);

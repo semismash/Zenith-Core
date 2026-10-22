@@ -16,8 +16,8 @@ namespace commands {
         Arch, Reg, ROM, RAM, Mem, Clk, Baud
     };
 
-    enum class TelemetryParam { // cycles & CPI param TBA later
-        Instr, Stall, StallPcnt, LoadUseStall, BranchFlush
+    enum class TelemetryParam {
+        Cycles, Instr, Stall, StallPcnt, Cpi, LoadUseStall, BranchFlush
     };
 
     // commands list:

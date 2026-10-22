@@ -12,7 +12,7 @@ namespace bytegen_mod {
         inline constexpr size_t POST_FRAME_BYTES = 1 + 5 + 26 + 1 + 1 + 1 + 12 + 1;   // 50, 3D len "BIOS Loaded..." 3F, 5C, 5D, pairs, 5F
         inline constexpr size_t STATE_LOG_BYTES = 2;
         inline constexpr size_t DD_REPLY_BYTES = 105;
-        inline constexpr size_t TELE_STATUS_BYTES = 22;
+        inline constexpr size_t TELE_STATUS_BYTES = 25;    // 5 params (cycles, instr, stall, load-use, branch flush), 5 bytes each
         inline constexpr size_t TELE_QUERY_BYTES = 6;
 
         Transaction make_echo(const commands::CommandEcho& cmd) {
