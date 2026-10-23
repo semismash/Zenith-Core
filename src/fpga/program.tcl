@@ -1,6 +1,8 @@
 # Zenith Core - program the Arty A7-100T over JTAG with the bitstream from build.tcl
 #
-#   cd build/vivado && vivado -mode batch -source ../../src/fpga/program.tcl       (`make fpga-program` does exactly this)
+#   cd build/vivado && vivado -mode batch -source ../../src/fpga/program.tcl [-tclargs <bitstream name>]
+#                                                                               (`make fpga-program` does exactly this)
+# The optional argument names a bitstream in build/vivado/ (default zenith_core, or e.g. uart_test).
 #
 # The configuration is volatile: it is gone after a power cycle (programming the on-board flash is a separate step).
 
@@ -11,7 +13,9 @@ proc die {msg} {
 
 set script_dir [file dirname [file normalize [info script]]]
 set root       [file normalize [file join $script_dir .. ..]]
-set bit_file   [file join $root build vivado zenith_core.bit]
+set bit_name   zenith_core
+if {$argc > 0} { set bit_name [lindex $argv 0] }
+set bit_file   [file join $root build vivado $bit_name.bit]
 
 if {![file exists $bit_file]} { die "$bit_file not found, run 'make fpga' first" }
 

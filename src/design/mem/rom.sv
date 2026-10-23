@@ -48,7 +48,11 @@ module rom #(   // currently houses only the bootloader
         if (!$value$plusargs("ROM_HEX=%s", hex_file)) hex_file = "bios.hex";
         $readmemh(hex_file, container);
 `else
-        $readmemh("bios.hex", container);    // PLACEHOLDER PATH TO BIOS BINARY
+        // synthesis: src/fpga/build.tcl writes rom_init_path.vh (`define ROM_INIT_FILE "<absolute path of bios.hex>") and
+        // adds its folder to the include path. An absolute path is always found, and if the file is missing the
+        // build stops instead of silently leaving the ROM empty
+        `include "rom_init_path.vh"
+        $readmemh(`ROM_INIT_FILE, container);
 `endif
     end
 
@@ -60,10 +64,32 @@ module rom #(   // currently houses only the bootloader
     assign data_rresp   = RESP_OKAY;    
     assign data_bresp   = RESP_SLVERR;  // ROM is write protected
 
-    always_ff @(posedge clk) begin                                          // two synchronous read ports (dual-port ROM)
-        if (if_arvalid)   if_rdata   <= container[if_araddr[ROM_AW+1:2]];   
-        if (data_arvalid) data_rdata <= container[data_araddr[ROM_AW+1:2]]; 
-    end                                                                     
+    // Two synchronous read ports (dual-port ROM), written with EXPLICIT 1024-word banks (one 36 Kbit block RAM each).
+    // Every bank is read on every access into its own output register, and the bank select is a register loaded under the
+    // same enable as the data. The mux after the registers therefore always uses the select that belongs to the data it
+    // picks, whatever the synthesis tool decides about splitting a deep memory over several block RAMs. (A bank boundary
+    // crossed by straight-line code worked in simulation but broke on the board.)
+    localparam int BANK_AW    = 10;                                            // 1024 words per bank
+    localparam int BANK_WORDS = 1 << BANK_AW;
+    localparam int NUM_BANKS  = (ROM_WORDS + BANK_WORDS - 1) / BANK_WORDS;     // 2 for the 8 KiB ROM
+    localparam int SEL_W      = (NUM_BANKS > 1) ? $clog2(NUM_BANKS) : 1;
+
+    Word              if_bank   [NUM_BANKS-1:0];
+    Word              data_bank [NUM_BANKS-1:0];
+    logic [SEL_W-1:0] if_sel;
+    logic [SEL_W-1:0] data_sel;
+
+    always_ff @(posedge clk) begin
+        for (int b = 0; b < NUM_BANKS; b++) begin
+            if (if_arvalid)   if_bank[b]   <= container[b * BANK_WORDS + int'(if_araddr[BANK_AW+1:2])];
+            if (data_arvalid) data_bank[b] <= container[b * BANK_WORDS + int'(data_araddr[BANK_AW+1:2])];
+        end
+        if (if_arvalid)   if_sel   <= SEL_W'(if_araddr   >> (BANK_AW + 2));
+        if (data_arvalid) data_sel <= SEL_W'(data_araddr >> (BANK_AW + 2));
+    end
+
+    assign if_rdata   = if_bank[if_sel];
+    assign data_rdata = data_bank[data_sel];
 
     always_ff @(posedge clk or negedge rst_n) begin                         // RD_IDLE / RD_RESP and WR_IDLE / WR_RESP
         if (!rst_n) begin                                                   

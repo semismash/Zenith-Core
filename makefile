@@ -34,6 +34,17 @@
 #   make cli                      codegen + build build/bin/zenith.exe   (SKIP_CODEGEN=1 to skip the codegen)
 #   make cli-run                  build and launch it
 #
+#   FPGA (Arty A7-100T, Vivado batch flow, no project files kept; Vivado has to be on PATH)
+#   make fpga                     BIOS for the board (TIMEOUT_DIV=1) + synthesis, implementation, bitstream -> build/vivado/
+#   make fpga-program             load build/vivado/zenith_core.bit into the board over JTAG
+#   make bios-debug               BIOS copy that prints a letter per boot stage -> build/bios/bios_debug.hex (see src/fpga/patch_bios_debug.py)
+#   make fpga FPGA_TOP=uart_test  CPU-free bring-up test (src/fpga/uart_test.sv): text over the UART + clock heartbeat LED
+#   make fpga-program FPGA_TOP=uart_test
+#   make fpga FPGA_ROM=build/programs/hw_hello.rom.hex FPGA_NAME=hw_hello    real CPU, tiny test program instead of the BIOS
+#   make fpga-program FPGA_NAME=hw_hello
+#
+#   make lint                     Verilator lint of the RTL with all warnings (latches, width mismatches, loops) -> build/lint.log
+#
 #   make clean                    delete build/        make clean-programs   delete only the assembled programs
 #   make help
 # ==================================================================================================
@@ -86,7 +97,7 @@ VERILOG_SRCS = $(PKG_SRCS) $(filter-out $(PKG_SRCS),$(sort $(shell find $(DESIGN
 
 .PHONY: all help asm rom-asm prog-build cprog runtime-selftest compile run sim bios bios-sim bios-build \
         bridge-compile bridge-run bridge-sim bridge-selftest \
-        cli cli-codegen cli-run cli-clean clean clean-programs
+        cli cli-codegen cli-run cli-clean fpga fpga-program bios-debug lint clean clean-programs
 
 all: compile
 
@@ -255,6 +266,12 @@ bios-sim:
 bios:
 	@$(MAKE) --no-print-directory bios-build BIOS_TD=1 BIOS_OUT=$(BIOS_HEX) BIOS_TAG=bios
 
+# board bring-up: a copy of bios.s with one-letter UART markers at each boot stage (TIMEOUT_DIV=1 like the real board image)
+bios-debug:
+	@mkdir -p $(BIOS_OUT_DIR)
+	python3 $(FPGA_DIR)/patch_bios_debug.py $(BIOS_SRC) $(BIOS_OUT_DIR)/bios_debug.s
+	@$(MAKE) --no-print-directory bios-build BIOS_TD=1 BIOS_OUT=$(BIOS_OUT_DIR)/bios_debug.hex BIOS_TAG=bios_debug BIOS_SRC=$(BIOS_OUT_DIR)/bios_debug.s
+
 # internal: needs BIOS_TD, BIOS_OUT, BIOS_TAG
 bios-build:
 	@if [ -z "$(BIOS_OUT)" ] || [ -z "$(BIOS_TAG)" ] || [ -z "$(BIOS_TD)" ]; then \
@@ -286,8 +303,8 @@ bios-build:
 #     BRIDGE_OPT=-O3        C++ optimisation of the model. Verilator applies its own OPT_FAST (default -Os, i.e. size)
 #                           AFTER -CFLAGS, so it has to be set on the make that compiles the model, which is why
 #                           the build is done in two steps (verilate, then make) and not with --build.
-#     BRIDGE_PUBLIC=all     expose every signal (--public-flat-rw), always works
-#     BRIDGE_PUBLIC=min     expose only the few signals sim_bridge.cpp reads (src/rtl_sim/bridge.vlt): faster
+#     BRIDGE_PUBLIC=min     (default) expose only the few signals sim_bridge.cpp reads (src/rtl_sim/bridge.vlt): ~3x faster
+#     BRIDGE_PUBLIC=all     expose every signal (--public-flat-rw), slow, only as a fallback if the .vlt is rejected
 #     BRIDGE_TRACE=1        compile waveform support in (+TRACE writes build/waveform_bridge.vcd), slower
 #   The sim prints its speed on exit: "[BRIDGE] ... cycles in ... s (x MHz)".
 # ==================================================================================================
@@ -394,6 +411,52 @@ cli-run: cli
 cli-clean:
 	@echo "[MAKE] Sweeping away the CLI build..."
 	rm -f $(CLI_EXE) $(CLI_DIR)/src/headers/messages_embed.hpp $(CLI_DIR)/src/headers/codes.hpp
+
+# ==================================================================================================
+# FPGA (Arty A7-100T) - Vivado in batch mode, non-project flow, everything lands in build/vivado/
+#   src/fpga/build.tcl     synthesis + implementation + bitstream, stops on a missing/malformed bios.hex, missing
+#                          packages or failed timing
+#   src/fpga/program.tcl   JTAG programming (volatile, gone after a power cycle)
+#   The scripts run from inside build/vivado, hence the ../../ (BUILD_DIR has to stay two levels deep for that).
+#   From MSYS2 Vivado's launcher may need its extension:  make fpga VIVADO=vivado.bat
+# ==================================================================================================
+FPGA_DIR      = $(SRC_DIR)/fpga
+VIVADO       ?= vivado
+VIVADO_OUT    = $(BUILD_DIR)/vivado
+# FPGA_TOP: 'top' is the real design (zenith_core.bit); any other name is a test top in src/fpga/<name>.sv (<name>.bit)
+FPGA_TOP     ?= top
+# FPGA_ROM: ROM image for the bitstream (default: the board BIOS). FPGA_NAME: bitstream name override.
+FPGA_ROM     ?= $(BIOS_HEX)
+FPGA_NAME    ?=
+FPGA_BITNAME  = $(if $(FPGA_NAME),$(FPGA_NAME),$(if $(filter top,$(FPGA_TOP)),zenith_core,$(FPGA_TOP)))
+FPGA_BIT      = $(VIVADO_OUT)/$(FPGA_BITNAME).bit
+VIVADO_FLAGS  = -mode batch -nojournal
+
+fpga: bios
+	@mkdir -p $(VIVADO_OUT)
+	@echo "[MAKE] Vivado build, takes a few minutes. Log: $(VIVADO_OUT)/build.log"
+	cd $(VIVADO_OUT) && $(VIVADO) $(VIVADO_FLAGS) -log build.log -source ../../$(FPGA_DIR)/build.tcl -tclargs $(FPGA_TOP) $(FPGA_BITNAME) $(FPGA_ROM)
+	@echo "[MAKE] ROM initialisation as seen by synthesis (expect a line saying the data file was read successfully):"
+	@grep -i 'readmem' $(VIVADO_OUT)/build.log || echo "[MAKE WARNING] no readmem line in the log, make sure the ROM got its contents!"
+	@echo "[MAKE] Bitstream: $(FPGA_BIT)   (timing report: $(VIVADO_OUT)/post_route_timing.rpt)"
+
+fpga-program:
+	@if [ ! -f $(FPGA_BIT) ]; then \
+		echo "[MAKE ERROR] $(FPGA_BIT) not found! Run 'make fpga' first."; \
+		exit 1; \
+	fi
+	cd $(VIVADO_OUT) && $(VIVADO) $(VIVADO_FLAGS) -log program.log -source ../../$(FPGA_DIR)/program.tcl -tclargs $(FPGA_BITNAME)
+
+# ==================================================================================================
+# Lint: the things Verilator tolerates in simulation but real hardware does not (inferred latches, width mismatches,
+# combinational loops, multiply driven signals). Writes build/lint.log and prints a count per warning type.
+# ==================================================================================================
+lint:
+	@mkdir -p $(BUILD_DIR)
+	@echo "[MAKE] Linting the RTL (all warnings, none fatal)..."
+	-$(VERILATOR) --lint-only -Wall -Wno-fatal -I$(DESIGN_DIR) $(VERILOG_SRCS) --top-module top > $(BUILD_DIR)/lint.log 2>&1
+	@echo "[MAKE] warnings by type (full text in $(BUILD_DIR)/lint.log):"
+	@grep -o '%Warning-[A-Z0-9_]*' $(BUILD_DIR)/lint.log | sort | uniq -c | sort -rn || echo "  none"
 
 # ==================================================================================================
 # Cleaning

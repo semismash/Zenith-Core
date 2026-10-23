@@ -2,6 +2,13 @@
 #
 #   cd build/vivado && vivado -mode batch -source ../../src/fpga/build.tcl        (`make fpga` does exactly this)
 #
+# Optional arguments:  <top module> <bitstream name> <ROM image, path relative to the repo root>
+# 1) the top module. Default is the real design ('top', bitstream zenith_core.bit). Any other name has to
+#    be a module in src/fpga/<name>.sv, e.g. 'uart_test' (CPU-free UART and clock bring-up test).
+# 2) the bitstream name without extension (default zenith_core, or the top module's name for a test top).
+# 3) the ROM image (default build/bios/bios.hex). A different one, e.g. a small test program built with
+#    'make rom-asm', runs the real CPU on the board without the BIOS.
+#
 # Reads the RTL from src/design, the constraints from src/fpga and the BIOS image from build/bios/bios.hex and writes
 # the bitstream, checkpoints and reports to build/vivado/. No Vivado project is kept anywhere, so there is no state
 # to get out of sync. Every check below stops the build with a message instead of producing a bitstream that boots
@@ -20,6 +27,13 @@ set bios_hex   [file join $root build bios bios.hex]
 set out_dir    [file join $root build vivado]
 set part       xc7a100tcsg324-1
 set top        top
+set bit_name   zenith_core
+if {$argc > 0 && [lindex $argv 0] ne "top"} {
+    set top      [lindex $argv 0]
+    set bit_name $top
+}
+if {$argc > 1 && [lindex $argv 1] ne ""} { set bit_name [lindex $argv 1] }
+if {$argc > 2 && [lindex $argv 2] ne ""} { set bios_hex [file normalize [file join $root [lindex $argv 2]]] }
 set rom_words  2048                      ;# 8 KiB ROM
 
 file mkdir $out_dir
@@ -81,6 +95,12 @@ puts "INFO: [llength $pkg_files] package files + [llength $other_files] other Sy
 
 read_verilog -sv $pkg_files
 read_verilog -sv $other_files
+if {$top ne "top"} {
+    set test_file [file join $script_dir $top.sv]
+    if {![file exists $test_file]} { die "top module '$top' requested but $test_file does not exist" }
+    read_verilog -sv $test_file
+    puts "INFO: top module $top from $test_file"
+}
 read_xdc $xdc_file
 
 # ---------------------------------------------------------------------------------------- synthesis
@@ -110,5 +130,5 @@ if {$wns ne "" && $wns < 0} { die "setup timing not met (worst slack $wns ns), s
 if {$whs ne "" && $whs < 0} { die "hold timing not met (worst slack $whs ns), see post_route_timing.rpt" }
 
 # ---------------------------------------------------------------------------------------- bitstream
-write_bitstream -force zenith_core.bit
-puts "INFO: done, bitstream: [file join $out_dir zenith_core.bit]"
+write_bitstream -force $bit_name.bit
+puts "INFO: done, bitstream: [file join $out_dir $bit_name.bit]"
