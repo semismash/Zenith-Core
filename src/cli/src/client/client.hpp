@@ -222,7 +222,7 @@ namespace client_mod {
 
             // shell side
             std::expected<uint64_t, error::Error> submit(bytegen_mod::Transaction tx);
-            std::expected<void, error::Error> enqueue_raw(std::span<const uint8_t> bytes, Nanos gap);
+            std::expected<void, error::Error> enqueue_raw(std::span<const uint8_t> bytes, Nanos gap, TimePoint now);
             bool finished(uint64_t seq) const;
             TxOutcome outcome_for(uint64_t seq) const;
             Snapshot snapshot() const;
@@ -270,7 +270,7 @@ namespace client_mod {
             std::expected<uint64_t, error::Error> submit(bytegen_mod::Transaction tx);
             TxOutcome wait_done(uint64_t seq);
             Snapshot snapshot() const;
-            std::expected<void, error::Error> enqueue_raw(std::span<const uint8_t> bytes, Nanos gap);
+            std::expected<void, error::Error> enqueue_raw(std::span<const uint8_t> bytes, Nanos gap, TimePoint now);
             void set_monitor(bool on);
             void set_log(bool on);
             void set_profile(const profile_mod::Profile& prof);

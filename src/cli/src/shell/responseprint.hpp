@@ -53,10 +53,12 @@ namespace print_mod {
             std::mutex mtx;
             replxx::Replxx* rx{nullptr};
             bool at_line_start{true};
+            uint64_t last_progress_step{~0ull};    // see render_progress: which 10%-step was last printed
 
             void emit(std::string_view text);
             void emit_line(std::string_view text);
             void render(const responses::Event& ev);
+            void render_progress(const std::string& text, uint64_t done, uint64_t total);
             void render_post(const responses::PostResults& post);
             void render_dump(uint32_t offset, const std::vector<uint8_t>& data);
             void render_device(const responses::EvDeviceData& info);

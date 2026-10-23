@@ -661,6 +661,7 @@ namespace client_mod {
     // program output: messages (3D len bytes 3F) are printed as messages, F0 2C ends the program,
     // 50 F0 00 means the BIOS rebooted under the program, everything else is raw output
     void SessionCore::program_byte(uint8_t byte, rsp::Events& ev, TimePoint now) {
+        program_notice_at = now + profile.program_notice();    // BIOS activity also re-arms the "still running" notice
         if (str.active) {
             str_byte(byte, ev, now);
             return;
@@ -918,9 +919,12 @@ namespace client_mod {
         return ++tx_seq;
     }
 
-    std::expected<void, error::Error> SessionCore::enqueue_raw(std::span<const uint8_t> bytes, Nanos gap) {
+    std::expected<void, error::Error> SessionCore::enqueue_raw(std::span<const uint8_t> bytes, Nanos gap, TimePoint now) {
         if (!transport_open) return std::unexpected(error::Error(error::SemanticError::NoTransport));
         for (const auto byte : bytes) raw_queue.push_back(RawByte{byte, gap});
+        // the user is actively feeding the running program: push the "still running" notice back out
+        // rather than let it fire while they're mid-interaction (e.g. typing a number via sendbyte)
+        if (state == SessionState::ProgramRunning) program_notice_at = now + profile.program_notice();
         return {};
     }
 
@@ -1078,11 +1082,11 @@ namespace client_mod {
         return core.snapshot();
     }
 
-    std::expected<void, error::Error> Session::enqueue_raw(std::span<const uint8_t> bytes, Nanos gap) {
+    std::expected<void, error::Error> Session::enqueue_raw(std::span<const uint8_t> bytes, Nanos gap, TimePoint now) {
         std::expected<void, error::Error> result{};
         {
             std::scoped_lock lock{mtx};
-            result = core.enqueue_raw(bytes, gap);
+            result = core.enqueue_raw(bytes, gap, now);
         }
         cv.notify_all();
         return result;

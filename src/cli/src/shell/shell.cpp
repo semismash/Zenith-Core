@@ -5,7 +5,9 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <format>
+#include <iostream>
 #include <string>
 #include <thread>
 
@@ -60,6 +62,41 @@ namespace shell_mod {
         last_image_offset{0}
     { }
 
+    // While a program is running, BIOS/program output keeps streaming in from a background thread at
+    // the same time the user is typing (sendbyte to feed the program, say). replxx's print() is meant
+    // to be safe to call from another thread while input() is reading keystrokes, but in practice the
+    // two can still corrupt each other's line redraw (seen firsthand: output text truncated mid-word,
+    // fused with whatever the user was typing). Neither side is at fault in an obviously fixable way
+    // from here, so the two are kept from ever touching the terminal at the same time at all: while a
+    // program is running, input switches to a plain blocking read with no line-redraw logic of its own
+    // (so a concurrent background print can't corrupt it, just land before or after it), and the
+    // printer is detached from replxx so it falls back to the same plain stdout writes. Normal replxx
+    // editing (history, tab-complete, arrow keys) resumes as soon as the program finishes.
+    std::optional<std::string> Shell::read_line(const std::string& prompt) {
+        if (session.snapshot().state != client_mod::SessionState::ProgramRunning) {
+            errno = 0;
+            const char* input = rx.input(prompt);
+            if (input == nullptr) {
+                if (errno == EAGAIN) return std::string{};    // Ctrl+C: line cleared, keep going
+                return std::nullopt;                          // Ctrl+D / EOF
+            }
+            return std::string{input};
+        }
+
+        printer.attach(nullptr);
+        std::fputs(prompt.c_str(), stdout);
+        std::fflush(stdout);
+        std::string line{};
+        const bool ok = static_cast<bool>(std::getline(std::cin, line));
+        printer.attach(&rx);
+        if (!ok) {
+            if (std::cin.eof()) return std::nullopt;    // Ctrl+D / EOF
+            std::cin.clear();                            // a signal or similar transient interruption
+            return std::string{};
+        }
+        return line;
+    }
+
     int Shell::run() {
         std::signal(SIGINT, on_sigint);
         printer.attach(&rx);
@@ -79,13 +116,9 @@ namespace shell_mod {
         const auto prompt = msgs.get("prompt.input");
 
         while (running) {
-            errno = 0;
-            const char* input = rx.input(prompt);
-            if (input == nullptr) {
-                if (errno == EAGAIN) continue;     // Ctrl+C: line cleared, keep going
-                break;                             // Ctrl+D / EOF
-            }
-            const auto line = trim(input);
+            const auto raw_line = read_line(prompt);
+            if (!raw_line) break;                  // Ctrl+D / EOF
+            const auto line = trim(*raw_line);
             if (line.empty()) continue;
             rx.history_add(line);
 
@@ -337,20 +370,23 @@ namespace shell_mod {
         std::vector<uint8_t> bytes{bios_protocol::TB_MSG_STR};
         bytegen_mod::put_u32(bytes, static_cast<uint32_t>(cmd.msg.size()));
         bytes.insert(bytes.end(), cmd.msg.begin(), cmd.msg.end());
-        if (auto res = session.enqueue_raw(bytes, profiles.active().chunk_gap(1)); !res) {
+        if (auto res = session.enqueue_raw(bytes, profiles.active().chunk_gap(1), client_mod::Clock::now()); !res) {
             printer.error(res.error());
             return;
         }
-        printer.say("shell.raw_queued", bytes.size());
+        // always program-running-only (enforced by the analyzer), so a "queued" confirmation is
+        // always noise here, and one less print() call racing with the program's own streaming output
     }
 
     void Shell::do_sendbyte(const commands::CommandSendByte& cmd) {
         const uint8_t byte[1]{cmd.tx_byte};
-        if (auto res = session.enqueue_raw(byte, profiles.active().chunk_gap(1)); !res) {
+        if (auto res = session.enqueue_raw(byte, profiles.active().chunk_gap(1), client_mod::Clock::now()); !res) {
             printer.error(res.error());
             return;
         }
-        printer.say("shell.raw_queued", 1);
+        // skip the confirmation while a program is running: it's mostly used there to feed a program's
+        // input, often in quick succession, and the text just adds noise (and another background print)
+        if (session.snapshot().state != client_mod::SessionState::ProgramRunning) printer.say("shell.raw_queued", 1);
     }
 
     // --interval is in 10 baud ticks, i.e. byte-times
@@ -361,7 +397,7 @@ namespace shell_mod {
             else printer.say("shell.raw_pending", pending.size(), hex_list(pending));
             return;
         }
-        if (auto res = session.enqueue_raw(*cmd.tx_byte_list, profiles.active().chunk_gap(cmd.interval)); !res) {
+        if (auto res = session.enqueue_raw(*cmd.tx_byte_list, profiles.active().chunk_gap(cmd.interval), client_mod::Clock::now()); !res) {
             printer.error(res.error());
             return;
         }

@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include <replxx.hxx>
@@ -35,6 +37,7 @@ namespace shell_mod {
             std::shared_ptr<const std::vector<uint8_t>> last_image;    // compared against by `verify`
             uint32_t last_image_offset;
 
+            std::optional<std::string> read_line(const std::string& prompt);
             void execute(commands::Command& cmd);
             void housekeeping();
             client_mod::TxOutcome run_transactions(std::vector<bytegen_mod::Transaction> txs);

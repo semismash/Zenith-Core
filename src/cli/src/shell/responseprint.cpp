@@ -190,16 +190,8 @@ namespace print_mod {
             },
             [this](const rsp::EvTelemetryApplied&) { emit_line(msgs.get("client.telemetry_applied")); },
             [this](const rsp::EvTelemetryStatus& e) { render_status(e); },
-            [this](const rsp::EvDumpProgress& e) {
-                if (!at_line_start) emit("\r");
-                emit(msgs.fmt("client.dump_progress", e.received, e.total));
-                if (e.received == e.total) emit("\n");
-            },
-            [this](const rsp::EvLoadProgress& e) {
-                if (!at_line_start) emit("\r");
-                emit(msgs.fmt("client.load_progress", e.percent));
-                if (e.percent == 100) emit("\n");
-            },
+            [this](const rsp::EvDumpProgress& e) { render_progress(msgs.fmt("client.dump_progress", e.received, e.total), e.received, e.total); },
+            [this](const rsp::EvLoadProgress& e) { render_progress(msgs.fmt("client.load_progress", e.percent), e.percent, 100); },
             [this](const rsp::EvMemDump& e) { render_dump(e.offset, e.data); },
             [this](const rsp::EvVerifyResult& e) {
                 if (e.sizes) emit_line(msgs.fmt("client.verify_size", e.sizes->first, e.sizes->second));
@@ -211,6 +203,33 @@ namespace print_mod {
             [this](const rsp::EvDeviceData& e) { render_device(e); },
             [this](const rsp::EvRegisters& e) { render_registers(e); },
         }, ev);
+    }
+
+    // `rx != nullptr` means we're attached to an interactive replxx prompt, where input() may be
+    // reading keystrokes on another thread at the same moment. replxx's print() is documented safe to
+    // call from a background thread in that situation, but it expects plain text it can account for
+    // when it redraws the prompt afterward - a raw '\r' isn't that, so in-place overwrite is reserved
+    // for the non-interactive fallback (piped/headless output, no concurrent input() to race against).
+    // When interactive, updates are instead throttled to roughly every 10% and each printed as its own
+    // complete, newline-terminated line.
+    void Printer::render_progress(const std::string& text, uint64_t done, uint64_t total) {
+        const bool finished = done >= total;
+        if (rx != nullptr) {
+            if (finished) {
+                last_progress_step = ~0ull;
+                emit_line(text);
+                return;
+            }
+            const uint64_t step = total == 0 ? 0 : (done * 10) / total;
+            if (step != last_progress_step) {
+                last_progress_step = step;
+                emit_line(text);
+            }
+            return;
+        }
+        if (!at_line_start) emit("\r");
+        emit(text);
+        if (finished) emit("\n");
     }
 
     void Printer::render_post(const rsp::PostResults& post) {
