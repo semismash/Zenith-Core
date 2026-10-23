@@ -81,13 +81,13 @@ telemetry_applied = "Telemetry settings applied"
 passed = "Self test PASSED"
 failed = "Self test FAILED"
 test_line = "  {:<14} {}"
-pass = "pass"
+pass = "PASS"
 fail = "FAIL"
-test_0 = "registers"
+test_0 = "Registers"
 test_1 = "ALU"
-test_2 = "control flow"
-test_3 = "memory"
-test_4 = "stack"
+test_2 = "Control flow"
+test_3 = "Memory"
+test_4 = "Stack"
 test_5 = "UART"
 
 [dump]
@@ -133,7 +133,7 @@ hint = "(The Arty A7 shows two FTDI ports, the UART is usually the second one, e
 
 [shell]
 banner = "Zenith Core BIOS CLI ({} profile). Type `help` for the command list."
-bye = "Bye"
+bye = "Exiting shell..."
 connecting = "Connecting..."
 connected = "Connected to the BIOS"
 connected_limited = "Connected, but the BIOS is in the limited POST-fail state: only `connect` and `selftest` work"
@@ -158,11 +158,13 @@ text = '''
 Zenith Core BIOS CLI
 Host console for the Zenith Core: a 5-stage pipelined RV32I core with forwarding, telemetry
 counters and a hand-written UART BIOS, running in Verilator (sim profile, TCP) or on a
-Digilent Arty A7-100T (fpga profile, USB serial).'''
+Digilent Arty A7-100T (FPGA profile, USB serial).
+Designed and Implemented by @semismash
+'''
 
 [github]
-url = ""    # put the repository link here
-text = "GitHub: {}"
+url = "https://github.com/semismash/Zenith-Core"    # put the repository link here
+text = "Check out the project on GitHub :D - {}"
 none = "No GitHub link set yet (messages.toml, [github] url)"
 
 [help]
