@@ -166,6 +166,11 @@ RV_CFLAGS   = -march=rv32i -mabi=ilp32 -mstrict-align -mno-relax -mcmodel=medany
               -I$(RT_DIR)
 CPROG_SRC   = $(PROG_DIR)/$(PROG).c
 CPROG_BASE  = $(if $(TEXT_BASE),$(TEXT_BASE),$(PRG_BASE))
+# every other .c/.S in src/runtime is compiled and linked automatically (crt0.S, uart.S and libc_min.c keep their
+# explicit rules); test_*.c are host-side tests and are skipped. Not recursive.
+RT_EXTRA_SRCS = $(filter-out $(RT_DIR)/libc_min.c $(wildcard $(RT_DIR)/test_*.c),$(wildcard $(RT_DIR)/*.c)) \
+                $(filter-out $(RT_DIR)/crt0.S $(RT_DIR)/uart.S,$(wildcard $(RT_DIR)/*.S))
+RT_EXTRA_OBJS = $(addprefix $(RT_OBJ_DIR)/,$(addsuffix .o,$(notdir $(RT_EXTRA_SRCS))))
 
 cprog:
 	@if [ ! -f $(CPROG_SRC) ]; then \
@@ -177,13 +182,17 @@ cprog:
 	$(RV_CC) $(RV_CFLAGS) -c $(RT_DIR)/crt0.S -o $(RT_OBJ_DIR)/crt0.o
 	$(RV_CC) $(RV_CFLAGS) -c $(RT_DIR)/uart.S -o $(RT_OBJ_DIR)/uart.o
 	$(RV_CC) $(RV_CFLAGS) -fno-tree-loop-distribute-patterns -c $(RT_DIR)/libc_min.c -o $(RT_OBJ_DIR)/libc_min.o
+	@for f in $(RT_EXTRA_SRCS); do \
+		echo "[MAKE] Compiling $$f"; \
+		$(RV_CC) $(RV_CFLAGS) -c $$f -o $(RT_OBJ_DIR)/$$(basename $$f).o || exit 1; \
+	done
 	$(RV_CC) $(RV_CFLAGS) -c $(CPROG_SRC) -o $(TMP_DIR)/$(PROG).o
 	@echo "[MAKE] Linking at $(CPROG_BASE)..."
 	$(RV_CC) $(RV_CFLAGS) -nostdlib -nostartfiles -T $(RT_DIR)/link.ld \
 		-Wl,--gc-sections -Wl,--no-warn-rwx-segments \
 		-Wl,--defsym=PRG_BASE=$(CPROG_BASE) -Wl,--defsym=PRG_TOP=$(PRG_TOP) \
 		-Wl,-Map=$(PROG_OUT)/$(PROG).map \
-		$(RT_OBJ_DIR)/crt0.o $(TMP_DIR)/$(PROG).o $(RT_OBJ_DIR)/uart.o $(RT_OBJ_DIR)/libc_min.o -lgcc \
+		$(RT_OBJ_DIR)/crt0.o $(TMP_DIR)/$(PROG).o $(RT_OBJ_DIR)/uart.o $(RT_OBJ_DIR)/libc_min.o $(RT_EXTRA_OBJS) -lgcc \
 		-o $(TMP_DIR)/$(PROG).elf
 	$(RV_SIZE) $(TMP_DIR)/$(PROG).elf
 	$(OBJCOPY) -O binary $(TMP_DIR)/$(PROG).elf $(PROG_OUT)/$(PROG).bin
@@ -209,7 +218,7 @@ runtime-selftest:
 	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -Dmemcpy=zmemcpy -Dmemset=zmemset -Dmemmove=zmemmove -Dmemcmp=zmemcmp -Dstrlen=zstrlen \
 		-c $(RT_DIR)/libc_min.c -o $(TMP_DIR)/libc_min_host.o
 	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -I$(RT_DIR) -I$(PROG_DIR) -o $(TMP_DIR)/test_zenith$(EXE_EXT) \
-		$(RT_DIR)/test_zenith.c $(TMP_DIR)/libc_min_host.o
+		$(RT_DIR)/test_zenith.c $(RT_DIR)/zenith.c $(TMP_DIR)/libc_min_host.o
 	$(TMP_DIR)/test_zenith$(EXE_EXT)
 
 # ==================================================================================================

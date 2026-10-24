@@ -2,12 +2,12 @@
  *
  *   #include "zenith.h"
  *
- * Two assembly stubs (uart.S) do the raw UART access, everything else here is plain C on top of them:
+ * Two assembly stubs (uart.S) do the raw UART access, everything else is plain C on top of them (zenith.c):
  *
  *   int      z_uart_rx(uint8_t *byte, uint32_t timeout);     assembly, polling receive
  *   void     z_uart_tx(uint8_t byte);                         assembly, polling transmit
- *   int32_t  z_gets(char *buf, int32_t max_size, uint32_t timeout);   one framed message in    (static inline, below)
- *   int32_t  z_puts(const char *buf, uint32_t size);                  one framed message out   (static inline, below)
+ *   int32_t  z_gets(char *buf, int32_t max_size, uint32_t timeout);   one framed message in    (zenith.c)
+ *   int32_t  z_puts(const char *buf, uint32_t size);                  one framed message out   (zenith.c)
  *
  * Message frame, the same one the BIOS and the CLI speak (see protocol.inc):
  *
@@ -65,56 +65,18 @@
 int  z_uart_rx(uint8_t *byte, uint32_t timeout);
 void z_uart_tx(uint8_t byte);
 
-/* ------------------------------------------------------------------------------------------------ z_puts */
-/* Sends buf[0..size-1] as one frame: 0x3D, size (4 bytes LE), the data, 0x3F. Returns 0, or Z_E_ARG / Z_E_ZERO. */
-static inline int32_t z_puts(const char *buf, uint32_t size)
-{
-    if (buf == NULL) return Z_E_ARG;
-    if (size == 0)   return Z_E_ZERO;
+/* ------------------------------------------------------------------------------------------------ framed messages
+ * implemented in zenith.c */
 
-    z_uart_tx(Z_MSG_STR);
-    for (int i = 0; i < 4; i++) z_uart_tx((uint8_t)(size >> (8 * i)));
-    for (uint32_t i = 0; i < size; i++) z_uart_tx((uint8_t)buf[i]);
-    z_uart_tx(Z_MSG_FLSH);
-    return 0;
-}
+/* Sends buf[0..size-1] as one frame: 0x3D, size (4 bytes LE), the data, 0x3F. Returns 0, or Z_E_ARG / Z_E_ZERO. */
+int32_t z_puts(const char *buf, uint32_t size);
 
 /* z_puts for a string literal: Z_PUTS_LIT("hello\n") sends 6 bytes, no NUL */
 #define Z_PUTS_LIT(s) z_puts((s), (uint32_t)(sizeof(s) - 1u))
 
-/* ------------------------------------------------------------------------------------------------ z_gets */
 /* Receives one frame into buf. `timeout` is passed to z_uart_rx for every single byte. Returns the number of data
  * bytes stored (1 .. max_size, nothing is ever appended, no NUL), or one of the negative codes above. */
-static inline int32_t z_gets(char *buf, int32_t max_size, uint32_t timeout)
-{
-    if (buf == NULL || max_size <= 0) return Z_E_ARG;
-
-    uint8_t b;
-    if (z_uart_rx(&b, timeout) != 0) return Z_E_TIMEOUT;
-    if (b != Z_MSG_STR) return Z_E_NOT_MSG;
-
-    uint32_t size = 0;
-    for (int i = 0; i < 4; i++) {
-        if (z_uart_rx(&b, timeout) != 0) return Z_E_TIMEOUT;
-        size |= (uint32_t)b << (8 * i);
-    }
-    if (size == 0) return Z_E_ZERO;
-
-    if (size > (uint32_t)max_size) {
-        /* swallow the payload so the next z_gets() starts on a frame boundary; never wait forever for it */
-        uint32_t dt = (timeout == 0 || timeout > Z_UART_DEFAULT_TIMEOUT) ? Z_UART_DEFAULT_TIMEOUT : timeout;
-        for (uint32_t i = 0; i < size; i++) {
-            if (z_uart_rx(&b, dt) != 0) break;
-        }
-        return Z_E_SIZE;
-    }
-
-    for (uint32_t i = 0; i < size; i++) {
-        if (z_uart_rx(&b, timeout) != 0) return Z_E_TIMEOUT;
-        buf[i] = (char)b;
-    }
-    return (int32_t)size;
-}
+int32_t z_gets(char *buf, int32_t max_size, uint32_t timeout);
 
 /* ------------------------------------------------------------------------------------------------ libc subset
  * implemented in libc_min.c, GCC emits calls to some of these on its own (struct copies, initialisers) */
